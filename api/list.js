@@ -15,6 +15,11 @@ export default async (req, res) => {
     return res.status(405).json({ error: "Only GET requests are allowed" });
   }
 
+  // 允许 Cloudflare Pages 访问
+  res.setHeader("Access-Control-Allow-Origin", "*"); // 允许所有域（不安全）
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS"); // 允许的方法
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
   const { isOnline } = req.query
 
   // 连接 PostgreSQL 数据库
