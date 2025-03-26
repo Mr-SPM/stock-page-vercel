@@ -2,7 +2,7 @@ import axios from 'axios';
 import connectDB from './mongoose.js';
 import Models from './Item.js';
 import stocks from './stocks.js'
-import utils from './utils.js';
+import utils from '../lib/request.js';
 import a from 'iconv-lite'
 
 const { calValue, randHeader, calcFixedPriceNumber } = utils

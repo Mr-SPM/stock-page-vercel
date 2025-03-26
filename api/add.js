@@ -1,10 +1,9 @@
 import pkg from 'pg';
-import axios from "axios";
-import utils from './utils.js'
+import { getStockList } from '../lib/request.js'
 
 
 const { Pool } = pkg
-// Neon PostgreSQL 连接信息 
+// Neon PostgreSQL 连接信息
 
 const pool = new Pool({
 
@@ -14,143 +13,39 @@ const pool = new Pool({
 
 });
 
-async function getStockList(datas) {
-    const stockList = datas.map(item => `${item.type.toLocaleLowerCase()}${item.value}`)
-    console.log(stockList);
-    const getList = async (part) => {
-        const url = `https://hq.sinajs.cn/list=${part.join(',')}`;
-        const resp = await axios.get(url, {
-            // axios 乱码解决 
-            responseType: 'arraybuffer',
-            transformResponse: [
-                (data) => {
-                    const body = a.decode(data, 'GB18030');
-                    return body;
-                }
-            ],
-
-            headers: {
-                ...utils.randHeader(),
-                Referer: 'http://finance.sina.com.cn/',
-            },
-
-        })
-        const splitData = resp.data.split(';\n');
-        const list = []
-        for (let i = 0; i < splitData.length - 1; i++) {
-            const code = splitData[i].split('="')[0].split('var hq_str_')[1];
-            const params = splitData[i].split('="')[1].split(',');
-            let type = code.substr(0, 2) || 'sh';
-            let symbol = code.substr(2);
-            let stockItem;
-            let fixedNumber = 2;
-            if (params.length > 1) {
-                if (/^(sh|sz|bj)/.test(code)) {
-                    // A股 
-                    let open = params[1];
-                    let yestclose = params[2];
-                    let price = params[3];
-                    let high = params[4];
-                    let low = params[5];
-                    fixedNumber = utils.calcFixedPriceNumber(open, yestclose, price, high, low);
-                    stockItem = {
-                        code,
-                        name: params[0],
-                        open: calValue(open, fixedNumber, false),
-                        yestclose: calValue(yestclose, fixedNumber, false),
-                        price: calValue(price, fixedNumber, false),
-                        low: calValue(low, fixedNumber, false),
-                        high: calValue(high, fixedNumber, false),
-                        volume: calValue(params[8], 2),
-                        amount: calValue(params[9], 2),
-                        date: params[30],
-                        time: `${params[30]} ${params[31]}`,
-                        percent: '',
-
-                    };
-                }
-
-            }
-
-            list.push(stockItem)
-
-        }
-        return list
-    }
-
-    let resList = []
-    let count = 0
-    try {
-        while (stockList.length > 0) {
-            const part = stockList.length > 500 ? stockList.splice(0, 500) : stockList.splice(0, stockList.length)
-            console.log(`抓取${++count}次`)
-            const list = await getList(part)
-            console.log(`抓取${count}完毕`);
-            resList = resList.concat(list)
-        }
-    }
-    catch (err) {
-        console.warn(err)
-    }
-    return resList
-}
 
 export default async (req, res) => {
+    const { isTemp } = req.query
     const client = await pool.connect();
+    const tableName = isTemp ? 'temp' : 'history'
     try {
         await client.query("BEGIN");
 
         const result = await client.query('SELECT * FROM stock_list');
-        console.log(result.rows);
-        const data = getStockList(result.rows)
-
+        const data = await getStockList(result.rows)
+        if (!Array.isArray(data)) {
+            return res.status(400).json({ error: "Expected an array" });
+        }
         // 创建表（如果不存在） 
-
-        await client.query(` 
-
-      CREATE TABLE IF NOT EXISTS history ( 
-
-        id SERIAL PRIMARY KEY, 
-
-        code TEXT NOT NULL, 
-
-        name TEXT NOT NULL, 
-
-        open NUMERIC, 
-
-        yestclose NUMERIC, 
-
-        price NUMERIC, 
-
-        low NUMERIC, 
-
-        high NUMERIC, 
-
-        volume NUMERIC, 
-
-        amount NUMERIC, 
-
-        date DATE, 
-
-        time TIMESTAMP 
-
-      ) 
-
-    `);
-
-
-
+        await client.query(`CREATE TABLE IF NOT EXISTS ${tableName} (
+          code TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          open NUMERIC(10, 2),
+          yestclose NUMERIC(10, 2),
+          price NUMERIC(10, 2),
+          low NUMERIC(10, 2),
+          high NUMERIC(10, 2),
+          volume NUMERIC(15, 2),
+          amount NUMERIC(20, 2),
+          date DATE NOT NULL,
+          time TIMESTAMP NOT NULL
+      );`);
         // 清空表数据 
-
-        await client.query("TRUNCATE TABLE history");
-
-
-
+        await client.query(`TRUNCATE TABLE ${tableName}`);
         // 批量插入数据 
-
         const insertQuery = ` 
 
-      INSERT INTO history (code, name, open, yestclose, price, low, high, volume, amount, date, time) 
+      INSERT INTO ${tableName} (code, name, open, yestclose, price, low, high, volume, amount, date, time) 
 
       VALUES ${data
 
@@ -165,41 +60,23 @@ export default async (req, res) => {
                 .join(",")} 
 
     `;
-
-
-
-        const values = data.flatMap((item) => [
-
-            item.code,
-
-            item.name,
-
-            item.open,
-
-            item.yestclose,
-
-            item.price,
-
-            item.low,
-
-            item.high,
-
-            item.volume,
-
-            item.amount,
-
-            item.date,
-
-            item.time,
-
-        ]);
-
-
-
+        const values = data.reduce((acc, item) => {
+            acc.push(
+                item.code,
+                item.name,
+                item.open,
+                item.yestclose,
+                item.price,
+                item.low,
+                item.high,
+                item.volume,
+                item.amount,
+                item.date,
+                item.time
+            );
+            return acc;
+        }, []);
         await client.query(insertQuery, values);
-
-
-
         await client.query("COMMIT");
 
         res.status(200).json({ success: true, message: "Data inserted successfully" });
