@@ -1,0 +1,22 @@
+{
+  "private": true,
+  "author": "Vic <vic.c2@outlook.com>",
+  "scripts": {
+    "dev": "umi dev",
+    "build": "umi build",
+    "postinstall": "umi setup",
+    "setup": "umi setup",
+    "start": "npm run dev"
+  },
+  "dependencies": {
+    "antd": "^5.22.5",
+    "axios": "^1.7.9",
+    "dayjs": "^1.11.13",
+    "umi": "^4.4.2"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.33",
+    "@types/react-dom": "^18.0.11",
+    "typescript": "^5.0.3"
+  }
+}

@@ -1,100 +1,10 @@
-import axios from 'axios';
-import connectDB from './mongoose.js';
-import Models from './Item.js';
-import stocks from './stocks.js'
-import utils from '../lib/request.js';
-import a from 'iconv-lite'
+import connectDB from '../lib/mongoose.js';
+import Models from '../models/Item.js';
+import { getAllStockListOnline } from '../lib/request.js'
 
-const { calValue, randHeader, calcFixedPriceNumber } = utils
 
-async function getStockList(datas) {
-    const stockList = datas.map(item => `${item.type.toLocaleLowerCase()}${item.value}`)
-    const getList = async (part) => {
-        const url = `https://hq.sinajs.cn/list=${part.join(',')}`;
-        const resp = await axios.get(url, {
-            // axios 乱码解决 
-            responseType: 'arraybuffer',
-            transformResponse: [
-                (data) => {
-                    const body = a.decode(data, 'GB18030');
-                    return body;
-                }
-            ],
 
-            headers: {
-                ...randHeader(),
-                Referer: 'http://finance.sina.com.cn/',
-            },
 
-        })
-        const splitData = resp.data.split(';\n');
-        const list = []
-        for (let i = 0; i < splitData.length - 1; i++) {
-            const code = splitData[i].split('="')[0].split('var hq_str_')[1];
-            const params = splitData[i].split('="')[1].split(',');
-            let type = code.substr(0, 2) || 'sh';
-            let symbol = code.substr(2);
-            let stockItem;
-            let fixedNumber = 2;
-            if (params.length > 1) {
-                if (/^(sh|sz|bj)/.test(code)) {
-                    // A股 
-                    let open = params[1];
-                    let yestclose = params[2];
-                    let price = params[3];
-                    let high = params[4];
-                    let low = params[5];
-                    fixedNumber = calcFixedPriceNumber(open, yestclose, price, high, low);
-                    stockItem = {
-                        code,
-                        name: params[0],
-                        open: calValue(open, fixedNumber, false),
-                        yestclose: calValue(yestclose, fixedNumber, false),
-                        price: calValue(price, fixedNumber, false),
-                        low: calValue(low, fixedNumber, false),
-                        high: calValue(high, fixedNumber, false),
-                        volume: calValue(params[8], 2),
-                        amount: calValue(params[9], 2),
-                        date: params[30],
-                        time: `${params[30]} ${params[31]}`,
-                        percent: '',
-
-                    };
-                }
-
-            }
-
-            list.push(stockItem)
-
-        }
-        return list
-    }
-
-    let resList = []
-    let count = 0
-    try {
-        while (stockList.length > 0) {
-            const part = stockList.length > 500 ? stockList.splice(0, 500) : stockList.splice(0, stockList.length)
-            console.log(`抓取${count++}次`)
-            const list = await getList(part)
-            resList = resList.concat(list)
-        }
-    }
-    catch (err) {
-        console.warn(err)
-    }
-    return resList
-}
-
-/**
- * 获取所有股票线上数据
- * @returns 
- */
-async function getAllStockListOnline() {
-    const shList = await getStockList(stocks.sh)
-    const szList = await getStockList(stocks.sz)
-    return shList.concat(szList)
-}
 
 export default async function handler(req, res) {
     const { isOnline } = req.query;

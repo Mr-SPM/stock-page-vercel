@@ -3,6 +3,13 @@ import { getStockList } from '../lib/request.js'
 
 const { Client } = pkg
 
+const mapRes = row => ({
+  ...row,
+  todayAmount: (row.temp_amount / 10000).toFixed(2),
+  yesterdayAmount: (row.amount / 10000).toFixed(2),
+  amountIncrease: (((row.temp_price - row.temp_yestclose) / row.temp_yestclose) * 100).toFixed(2)
+})
+
 export default async (req, res) => {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Only GET requests are allowed" });
@@ -27,38 +34,38 @@ export default async (req, res) => {
 
       // 构建 SQL VALUES 部分
       const valuesPart = newData
-        .map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`)
+        .map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`)
         .join(", ");
 
       // 构建参数数组
-      const values = newData.flatMap(item => [item.code, parseFloat(item.amount)]);
-      
+      const values = newData.flatMap(item => [item.code, parseFloat(item.amount), item.price, item.yestclose]);
 
       // 构建 SQL 语句
       const query = `
-      WITH new_data (code, amount) AS (
-        VALUES ${valuesPart}
-      )
-      SELECT h.*
-      FROM history h
-      INNER JOIN new_data nd ON h.code = nd.code
-      WHERE CAST(h.amount AS NUMERIC) * 0.09 < CAST(nd.amount AS NUMERIC)
-      ORDER BY nd.amount DESC
-      LIMIT 100;
-    `;
+  WITH new_data (code, amount, price, yestclose) AS (
+    VALUES ${valuesPart}
+  )
+  SELECT h.*, nd.amount AS temp_amount, nd.price AS temp_price, nd.yestclose AS temp_yestclose
+  FROM history h
+  INNER JOIN new_data nd ON h.code = nd.code
+  WHERE h.amount * 0.09 < CAST(nd.amount AS NUMERIC)
+  ORDER BY nd.amount DESC
+  LIMIT 100;
+`;
+
 
       const result = await client.query(query, values);
       await client.end();
 
-      return res.status(200).json(result.rows);
+      return res.status(200).json(result.rows.map(mapRes));
     } else {
       // 查询 temp 表中符合条件的记录
       const query = `
-      SELECT temp.*
-      FROM temp
-      INNER JOIN history ON temp.code = history.code
-      WHERE temp.amount > history.amount * 0.09
-      ORDER BY temp.amount DESC
+      SELECT h.*, t.amount AS temp_amount, t.price AS temp_price, t.yestclose AS temp_yestclose
+      FROM history h
+      INNER JOIN temp t ON h.code = t.code
+      WHERE t.amount::NUMERIC > h.amount::NUMERIC * 0.09
+      ORDER BY h.amount DESC
       LIMIT 100;
     `;
 
@@ -66,7 +73,7 @@ export default async (req, res) => {
 
       await client.end();
 
-      return res.status(200).json(result.rows);
+      return res.status(200).json(result.rows.map(mapRes));
     }
   } catch (error) {
     console.error("Database error:", error);
