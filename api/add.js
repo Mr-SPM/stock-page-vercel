@@ -1,8 +1,6 @@
 import pkg from 'pg';
-import { getStockList } from '../lib/request.js'
-import utils from '../lib/utils.js'
+import { getStockList, isTradingDay } from '../lib/request.js'
 
-const { isTradingDay } = utils
 
 const { Pool } = pkg
 // Neon PostgreSQL 连接信息
