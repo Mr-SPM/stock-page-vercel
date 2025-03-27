@@ -14,6 +14,8 @@ export default defineConfig({
       target: 'http://localhost:3000',
       'changeOrigin': true,
     }
+  },
+  define: {
+    TOKEN: process.env.TOKEN
   }
-
 });

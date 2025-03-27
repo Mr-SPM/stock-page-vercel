@@ -19,6 +19,9 @@ export function getStockList() {
 export function goLog() {
     return request.get('/temp')
 }
+export function initStockList() {
+    return request.get('/init')
+}
 
 export function getTempList(params: { isOnline: 0 | 1 }) {
     return axios.get('https://stockapi.1168168.xyz/api/data', { params })

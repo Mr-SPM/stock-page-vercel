@@ -31,6 +31,7 @@ export default async (req, res) => {
   try {
     await client.connect();
     if (isOnline === '1') {
+      console.log('在线查询')
       const stockList = await client.query('SELECT * FROM stock_list');
       const newData = await getStockList(stockList.rows)
       if (!Array.isArray(newData)) {

@@ -1,5 +1,5 @@
 import { Button, Card, message, Space, Spin, Statistic, Table } from 'antd'
-import { getList, goLog } from '@/api';
+import { getList, goLog, initStockList } from '@/api';
 import { useState } from 'react';
 import { ColumnType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -56,6 +56,11 @@ export default function HomePage() {
         }
     }
 
+    const onInitStockList = async () => {
+        await initStockList()
+        message.success('操作成功')
+    }
+
     return (
         <Card style={{width: '100%'}} title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
             <div style={{ marginBottom: 16 }}>
@@ -64,6 +69,7 @@ export default function HomePage() {
                     <Button type='primary' onClick={() => onGetList()} style={{ width: '100%' }}>日志查询</Button>
                     <Button type='primary' onClick={() => onGetList(1)} style={{ width: '100%' }}>实时查询</Button>
                     <Button type='primary' onClick={onLog} style={{ width: '100%' }}>记录日志</Button>
+                    <Button danger type='primary' onClick={onInitStockList} style={{ width: '100%' }}>更新列表</Button>
                 </Space>
             </div>
             <Spin spinning={loading}>
