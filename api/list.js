@@ -1,88 +1,87 @@
-import pkg from 'pg';
-import { getStockList } from '../lib/request.js'
+import { Pool } from '@neondatabase/serverless';
+import { getStockList } from '../lib/request.js';
 
-const { Client } = pkg
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 const mapRes = row => ({
   ...row,
-  todayAmount: (row.temp_amount / 10000).toFixed(2),
-  yesterdayAmount: (row.amount / 10000).toFixed(2),
-  amountIncrease: (((row.temp_price - row.temp_yestclose) / row.temp_yestclose) * 100).toFixed(2)
-})
+  todayAmount: (Number(row.temp_amount) / 10000).toFixed(2),
+  yesterdayAmount: (Number(row.amount) / 10000).toFixed(2),
+  amountIncrease: row.temp_yestclose && row.temp_yestclose !== 0
+    ? (((row.temp_price - row.temp_yestclose) / row.temp_yestclose) * 100).toFixed(2)
+    : '0.00', // 避免除以 0 的错误
+});
 
 export default async (req, res) => {
-  if (req.method !== "GET") {
-    return res.status(405).json({ error: "Only GET requests are allowed" });
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Only GET requests are allowed' });
   }
 
-  // 允许 Cloudflare Pages 访问
-  res.setHeader("Access-Control-Allow-Origin", "*"); // 允许所有域（不安全）
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS"); // 允许的方法
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  // 允许跨域
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  const { isOnline } = req.query
-
-  // 连接 PostgreSQL 数据库
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL, // 在 Vercel 环境变量中配置
-    ssl: { rejectUnauthorized: false }, // Neon 需要 SSL 连接
-  });
+  const { isOnline } = req.query;
 
   try {
-    await client.connect();
     if (isOnline === '1') {
-      console.log('在线查询')
-      const stockList = await client.query('SELECT * FROM stock_list');
-      const newData = await getStockList(stockList.rows)
-      if (!Array.isArray(newData)) {
-        return res.status(400).json({ error: "Expected an array" });
+      console.log('在线查询');
+      const stockListResult = await pool.query('SELECT * FROM stock_list');
+      const stockList = stockListResult.rows;
+      const newData = await getStockList(stockList);
+
+      if (!Array.isArray(newData) || newData.length === 0) {
+        return res.status(400).json({ error: 'Expected a non-empty array' });
       }
 
-      // 构建 SQL VALUES 部分
-      const valuesPart = newData
-        .map((_, i) => `($${i * 4 + 1}, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4})`)
-        .join(", ");
+      const insertValues = newData.flatMap(item => [item.code, parseFloat(item.amount), item.price, item.yestclose]);
 
-      // 构建参数数组
-      const values = newData.flatMap(item => [item.code, parseFloat(item.amount), item.price, item.yestclose]);
-
-      // 构建 SQL 语句
+      // 使用 CTE 代替临时表
       const query = `
-  WITH new_data (code, amount, price, yestclose) AS (
-    VALUES ${valuesPart}
-  )
-  SELECT h.*, nd.amount AS temp_amount, nd.price AS temp_price, nd.yestclose AS temp_yestclose
-  FROM history h
-  INNER JOIN new_data nd ON h.code = nd.code
-  WHERE h.amount * 0.09 < CAST(nd.amount AS NUMERIC)
-  ORDER BY nd.amount DESC
-  LIMIT 100;
-`;
+        WITH temp_new_data AS (
+          SELECT * FROM UNNEST(
+            $1::TEXT[], $2::NUMERIC[], $3::NUMERIC[], $4::NUMERIC[]
+          ) AS t(code, amount, price, yestclose)
+        )
+        SELECT h.*, 
+               t.amount AS temp_amount, 
+               t.price AS temp_price, 
+               t.yestclose AS temp_yestclose
+        FROM history h
+        INNER JOIN temp_new_data t ON h.code = t.code
+        WHERE h.amount * 0.09 < t.amount
+        ORDER BY t.amount DESC
+        LIMIT 100;
+      `;
 
+      const values = [
+        newData.map(item => item.code),
+        newData.map(item => parseFloat(item.amount)),
+        newData.map(item => item.price),
+        newData.map(item => item.yestclose),
+      ];
 
-      const result = await client.query(query, values);
-      await client.end();
-
+      const result = await pool.query(query, values);
       return res.status(200).json(result.rows.map(mapRes));
     } else {
-      // 查询 temp 表中符合条件的记录
       const query = `
-      SELECT h.*, t.amount AS temp_amount, t.price AS temp_price, t.yestclose AS temp_yestclose
-      FROM history h
-      INNER JOIN temp t ON h.code = t.code
-      WHERE t.amount::NUMERIC > h.amount::NUMERIC * 0.09
-      ORDER BY h.amount DESC
-      LIMIT 100;
-    `;
+        WITH filtered AS (
+          SELECT h.*, t.amount AS temp_amount, t.price AS temp_price, t.yestclose AS temp_yestclose
+          FROM history h
+          INNER JOIN temp t ON h.code = t.code
+          WHERE t.amount > h.amount * 0.09
+        )
+        SELECT * FROM filtered
+        ORDER BY temp_amount DESC
+        LIMIT 100;
+      `;
 
-      const result = await client.query(query);
-
-      await client.end();
-
+      const result = await pool.query(query);
       return res.status(200).json(result.rows.map(mapRes));
     }
   } catch (error) {
-    console.error("Database error:", error);
-    return res.status(500).json({ error: "Internal Server Error" });
+    console.error('Database error:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
   }
 };

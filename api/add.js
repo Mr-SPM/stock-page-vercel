@@ -1,38 +1,52 @@
-import pkg from 'pg';
-import { getStockList, isTradingDay } from '../lib/request.js'
+import { Pool } from '@neondatabase/serverless';
+import { getStockList, isTradingDay } from '../lib/request.js';
 
-
-const { Pool } = pkg
-// Neon PostgreSQL 连接信息
-
+// Serverless 优化配置
 const pool = new Pool({
-
-    connectionString: process.env.DATABASE_URL, // 在Vercel环境变量中配置 DATABASE_URL 
-
-    ssl: { rejectUnauthorized: false }, // Neon 需要 SSL 
-
+  connectionString: process.env.DATABASE_URL,
+  max: 1,  // 适应 Serverless 瞬时特性
+  idleTimeoutMillis: 10_000,
+  connectionTimeoutMillis: 3_000
 });
 
+// 表名白名单验证
+const ALLOWED_TABLES = new Set(['history', 'temp']);
 
 export default async (req, res) => {
-    const { isTemp, force } = req.query
-    const client = await pool.connect();
-    const tableName = isTemp ? 'temp' : 'history'
-    let flag = force
-    if (!force) {
-        flag = await isTradingDay()
-    }
-    if (flag) {
-        try {
-            await client.query("BEGIN");
+  const { isTemp, force } = req.query;
+  const tableName = isTemp ? 'temp' : 'history';
+  
+  // 验证表名安全性
+  if (!ALLOWED_TABLES.has(tableName)) {
+    return res.status(400).json({ error: 'Invalid table name' });
+  }
 
-            const result = await client.query('SELECT * FROM stock_list');
-            const data = await getStockList(result.rows)
-            if (!Array.isArray(data)) {
-                return res.status(400).json({ error: "Expected an array" });
-            }
-            // 创建表（如果不存在） 
-            await client.query(`CREATE TABLE IF NOT EXISTS ${tableName} (
+  try {
+    const client = await pool.connect();
+    try {
+      // 交易日判断优化
+      const shouldExecute = force === 'true' || (await isTradingDay());
+      if (!shouldExecute) {
+        return res.status(200).send('非交易日，不执行任务');
+      }
+
+      // 获取股票基础数据
+      const { rows: stockList } = await client.query('SELECT * FROM stock_list');
+      const marketData = await getStockList(stockList);
+      
+      if (!Array.isArray(marketData)) {
+        return res.status(400).json({ error: "Invalid data format" });
+      }
+
+      await client.query('BEGIN');
+
+      // 使用原子表替换方案
+      const tempTable = `${tableName}_new`;
+      const backupTable = `${tableName}_old`;
+
+      // 1. 创建新表（带索引）
+      await client.query(`
+        CREATE TABLE ${tempTable} (
           code TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           open NUMERIC(10, 2),
@@ -43,63 +57,68 @@ export default async (req, res) => {
           volume NUMERIC(15, 2),
           amount NUMERIC(20, 2),
           date DATE NOT NULL,
-          time TIMESTAMP NOT NULL
-      );`);
-            // 清空表数据 
-            await client.query(`TRUNCATE TABLE ${tableName}`);
-            // 批量插入数据 
-            const insertQuery = ` 
+          time TIMESTAMPTZ NOT NULL
+        );
+      `);
 
-      INSERT INTO ${tableName} (code, name, open, yestclose, price, low, high, volume, amount, date, time) 
+      // 2. 批量插入优化（使用 UNNEST）
+      await client.query(`
+        INSERT INTO ${tempTable} (
+          code, name, open, yestclose, price, 
+          low, high, volume, amount, date, time
+        )
+        SELECT * FROM UNNEST(
+          $1::text[], $2::text[], $3::numeric[], 
+          $4::numeric[], $5::numeric[], $6::numeric[],
+          $7::numeric[], $8::numeric[], $9::numeric[],
+          $10::date[], $11::timestamptz[]
+        )
+      `, [
+        marketData.map(x => x.code),
+        marketData.map(x => x.name),
+        marketData.map(x => x.open),
+        marketData.map(x => x.yestclose),
+        marketData.map(x => x.price),
+        marketData.map(x => x.low),
+        marketData.map(x => x.high),
+        marketData.map(x => x.volume),
+        marketData.map(x => x.amount),
+        marketData.map(x => x.date),
+        marketData.map(x => x.time)
+      ]);
 
-      VALUES ${data
+      // 3. 原子切换表
+      await client.query(`
+        DROP TABLE IF EXISTS ${backupTable};
+        ALTER TABLE IF EXISTS ${tableName} RENAME TO ${backupTable};
+        ALTER TABLE ${tempTable} RENAME TO ${tableName};
+      `);
 
-                    .map(
+      await client.query('COMMIT');
 
-                        (_, i) =>
+      res.status(200).json({ 
+        success: true,
+        updated: marketData.length,
+        backup: backupTable
+      });
 
-                            `($${i * 11 + 1}, $${i * 11 + 2}, $${i * 11 + 3}, $${i * 11 + 4}, $${i * 11 + 5}, $${i * 11 + 6}, $${i * 11 + 7}, $${i * 11 + 8}, $${i * 11 + 9}, $${i * 11 + 10}, $${i * 11 + 11})`
-
-                    )
-
-                    .join(",")} 
-
-    `;
-            const values = data.reduce((acc, item) => {
-                acc.push(
-                    item.code,
-                    item.name,
-                    item.open,
-                    item.yestclose,
-                    item.price,
-                    item.low,
-                    item.high,
-                    item.volume,
-                    item.amount,
-                    item.date,
-                    item.time
-                );
-                return acc;
-            }, []);
-            await client.query(insertQuery, values);
-            await client.query("COMMIT");
-
-            res.status(200).json({ success: true, message: "Data inserted successfully" });
-
-        } catch (error) {
-
-            await client.query("ROLLBACK");
-
-            res.status(500).json({ error: "Database error", details: error.message });
-
-        } finally {
-
-            client.release();
-
-        }
-    } else {
-        res.status(200).send('非交易日,不执行任务')
+    } catch (err) {
+      await client.query('ROLLBACK');
+      // 清理临时表
+      await client.query(`DROP TABLE IF EXISTS ${tempTable}`);
+      console.error('Transaction error:', err);
+      res.status(500).json({ 
+        error: 'Operation failed',
+        details: err.message 
+      });
+    } finally {
+      client.release();
     }
-
-
-}; 
+  } catch (err) {
+    console.error('System error:', err);
+    res.status(500).json({ 
+      error: 'System error',
+      details: err.message 
+    });
+  }
+};
