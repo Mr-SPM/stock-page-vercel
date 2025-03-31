@@ -33,7 +33,7 @@ export default function HomePage() {
     }, {
         title: '记录时间',
         dataIndex: 'time',
-        render: (t) => dayjs(t).format('YYYY/MM/DD')
+        render: (t) => dayjs(t).format('YYYY/MM/DD HH:mm')
     }]
 
     const onGetList = async (isOnline = 0 as any) => {
