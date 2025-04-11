@@ -31,9 +31,8 @@ export default function HomePage() {
         render: (t) => <span style={{ color: 'red' }}>{t}</span>,
         width: 80,
     }, {
-        title: '记录时间',
-        dataIndex: 'time',
-        render: (t) => dayjs(t).format('YYYY/MM/DD HH:mm')
+        title: '连榜次数',
+        dataIndex: 'consecutive_count',
     }]
 
     const onGetList = async (isOnline = 0 as any) => {

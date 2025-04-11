@@ -4,7 +4,8 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "setup": "npx tsx scripts/setup-database.ts"
   },
   "keywords": [],
   "author": "",
@@ -15,7 +16,11 @@
     "@vercel/node": "^5.1.14",
     "axios": "^1.8.4",
     "dayjs": "^1.11.13",
+    "dotenv": "^16.5.0",
     "iconv-lite": "^0.6.3",
     "mongoose": "^8.13.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.3"
   }
 }
