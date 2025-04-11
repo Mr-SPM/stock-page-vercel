@@ -1,5 +1,5 @@
 import { Pool } from '@neondatabase/serverless';
-import { getStockList } from '../lib/request.js';
+import { getStockList, isTradingDay } from '../lib/request.js';
 import { saveDailyAndUpdateStats } from '../lib/count.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -23,8 +23,18 @@ export default async (req, res) => {
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
+
+
   const { isOnline, count } = req.query;
   const needCount = count === '1';
+
+  if (needCount) {
+    // 交易日判断优化
+    const shouldExecute = force === 'true' || (await isTradingDay());
+    if (!shouldExecute) {
+      return res.status(200).send([]);
+    }
+  }
 
   try {
     let newData = [];
@@ -43,7 +53,7 @@ export default async (req, res) => {
 
     // 查询历史数据并包含计数信息
     let query, values;
-    
+
     if (isOnline === '1') {
       query = `
         WITH temp_new_data AS (
