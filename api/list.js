@@ -41,7 +41,6 @@ export default async (req, res) => {
 
     // 只有当 isOnline === '1' 时才从接口获取数据
     if (isOnline === '1') {
-      console.log('在线查询');
       const stockListResult = await pool.query('SELECT * FROM stock_list');
       const stockList = stockListResult.rows;
       newData = await getStockList(stockList);
@@ -104,8 +103,6 @@ export default async (req, res) => {
       ...mapRes(row),
       consecutive_count: row.consecutive_count || 0, // 如果没有找到计数，则默认为 0
     }));
-
-    console.log(final);
 
     // 需要更新计数时调用 saveDailyAndUpdateStats
     if (needCount) {
