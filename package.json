@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "setup": "npx tsx scripts/setup-database.ts",
-    "build": "pnpm run build --prefix frontend"
+    "build": "cd frontend && pnpm run build"
   },
   "keywords": [],
   "author": "",
