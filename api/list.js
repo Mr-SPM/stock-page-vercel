@@ -1,5 +1,5 @@
 import { Pool } from '@neondatabase/serverless';
-import { getStockList, isTradingDay } from '../lib/request.js';
+import { getStockList } from '../lib/request.js';
 import { saveDailyAndUpdateStats } from '../lib/count.js';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -25,16 +25,10 @@ export default async (req, res) => {
 
 
 
-  const { isOnline, count, force } = req.query;
+  const { isOnline, count } = req.query;
   const needCount = count === '1';
 
-  if (needCount) {
-    // 交易日判断优化
-    const shouldExecute = force === 'true' || (await isTradingDay());
-    if (!shouldExecute) {
-      return res.status(200).send([]);
-    }
-  }
+  await pool.query('BEGIN');
 
   try {
     let newData = [];
@@ -104,15 +98,24 @@ export default async (req, res) => {
       consecutive_count: row.consecutive_count || 0, // 如果没有找到计数，则默认为 0
     }));
 
+    console.log('查询结束');
+
     // 需要更新计数时调用 saveDailyAndUpdateStats
     if (needCount) {
       await saveDailyAndUpdateStats(pool, final);
+      console.log('更新daily结束');
     }
+
+    await pool.query('COMMIT');
+
+
 
     return res.status(200).json(final);
 
   } catch (error) {
     console.error('Database error:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
+  } finally {
+    await pool.query('ROLLBACK');
   }
 };
