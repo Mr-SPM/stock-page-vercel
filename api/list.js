@@ -25,7 +25,7 @@ export default async (req, res) => {
 
 
 
-  const { isOnline, count } = req.query;
+  const { isOnline, count, force } = req.query;
   const needCount = count === '1';
 
   if (needCount) {
