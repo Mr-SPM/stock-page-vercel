@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "setup": "npx tsx scripts/setup-database.ts"
+    "setup": "npx tsx scripts/setup-database.ts",
+    "build": "pnpm run build --prefix frontend"
   },
   "keywords": [],
   "author": "",
@@ -22,5 +23,6 @@
   },
   "devDependencies": {
     "tsx": "^4.19.3"
-  }
+  },
+  "packageManager": "pnpm@10.7.0"
 }
