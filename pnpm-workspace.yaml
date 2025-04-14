@@ -1,0 +1,3 @@
+# pnpm-workspace.yaml
+packages:
+  - 'frontend'    # 支持通配符（例如多个子包）
