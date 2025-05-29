@@ -11,6 +11,7 @@ export default function HomePage() {
         title: '股票',
         dataIndex: 'name',
         width: 100,
+        render: (v, row) => <Button type="link" href={`https://finance.sina.com.cn/realstock/company/${row.code}/nc.shtml`} target='_blank'>{v}</Button>
     }, {
         title: '成交额（亿）',
         dataIndex: 'todayAmount',
@@ -72,7 +73,7 @@ export default function HomePage() {
                 </Space>
             </div>
             <Spin spinning={loading}>
-                <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 20 }} scroll={{x: true, y: 500}}/>
+                <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{x: true, y: 500}}/>
             </Spin>
         </Card>
     );
