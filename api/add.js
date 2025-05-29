@@ -1,6 +1,8 @@
-import { Pool } from '@neondatabase/serverless';
+import { Pool,neonConfig } from '@neondatabase/serverless';
 import { getStockList, isTradingDay } from '../lib/request.js';
+import ws from 'ws'
 
+neonConfig.webSocketConstructor = ws;
 // Serverless 优化配置
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
