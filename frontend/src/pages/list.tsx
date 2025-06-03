@@ -36,7 +36,7 @@ export default function HomePage() {
         dataIndex: 'consecutive_count',
     }]
 
-    const onGetList = async (isOnline = 0 as any) => {
+    const onGetList = async (isOnline: 0 | 1) => {
         setLoading(true)
         try {
             const res = await getList({ isOnline })
@@ -62,18 +62,17 @@ export default function HomePage() {
     }
 
     return (
-        <Card style={{width: '100%'}} title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
+        <Card style={{ width: '100%' }} title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
             <div style={{ marginBottom: 16 }}>
-                <Space align='center' style={{ width: '100%' }}>
-
-                    <Button type='primary' onClick={() => onGetList()} style={{ width: '100%' }}>日志查询</Button>
+                <Space align='center' style={{ width: '100%' }} wrap>
+                    <Button type='primary' onClick={() => onGetList(0)} style={{ width: '100%' }}>日志查询</Button>
                     <Button type='primary' onClick={() => onGetList(1)} style={{ width: '100%' }}>实时查询</Button>
                     <Button type='primary' onClick={onLog} style={{ width: '100%' }}>记录日志</Button>
                     <Button danger type='primary' onClick={onInitStockList} style={{ width: '100%' }}>更新列表</Button>
                 </Space>
             </div>
             <Spin spinning={loading}>
-                <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{x: true, y: 500}}/>
+                <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{ x: true, y: 500 }} />
             </Spin>
         </Card>
     );
