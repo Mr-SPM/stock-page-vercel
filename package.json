@@ -6,7 +6,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "setup": "npx tsx scripts/setup-database.ts",
-    "build": "cd frontend && pnpm run build"
+    "build": "cd frontend && pnpm run build",
+    "vercel-login": "npx vercel login",
+    "vercel-link": "npx vercel link",
+    "env-pull": "npx vercel env pull"
   },
   "keywords": [],
   "author": "",
