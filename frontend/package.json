@@ -12,7 +12,8 @@
     "antd": "^5.22.5",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",
-    "umi": "^4.4.2"
+    "umi": "^4.4.2",
+    "workbox-webpack-plugin": "^7.3.0"
   },
   "devDependencies": {
     "@types/react": "^18.0.33",
