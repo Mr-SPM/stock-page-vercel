@@ -23,6 +23,10 @@ export function initStockList() {
     return request.get('/init')
 }
 
+export function addLog() {
+     return request.get('/add')
+}
+
 export function getTempList(params: { isOnline: 0 | 1 }) {
     return axios.get('https://stockapi.1168168.xyz/api/data', { params })
 }

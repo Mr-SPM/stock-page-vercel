@@ -1,11 +1,29 @@
-import { Button, Card, message, Space, Spin, Statistic, Table } from 'antd'
-import { getList, goLog, initStockList } from '@/api';
-import { useState } from 'react';
+import { Button, Card, Dropdown, List, message, Space, Spin, Statistic, Table } from 'antd'
+import { getList, goLog, initStockList, addLog } from '@/api';
+import { useEffect, useState } from 'react';
 import { ColumnType } from 'antd/es/table';
 import dayjs from 'dayjs';
 export default function HomePage() {
     const [info, setInfo] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
+
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        // 判断窗口宽度是否小于 768px（常见移动端断点）
+        const checkIfMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+        };
+
+        // 初始化检查
+        checkIfMobile();
+
+        // 监听窗口变化
+        window.addEventListener("resize", checkIfMobile);
+
+        // 组件卸载时移除监听
+        return () => window.removeEventListener("resize", checkIfMobile);
+    }, []);
 
     const items: ColumnType[] = [{
         title: '股票',
@@ -37,11 +55,13 @@ export default function HomePage() {
     }]
 
     const onGetList = async (isOnline: 0 | 1) => {
-        setLoading(true)
         try {
+            setLoading(true)
             const res = await getList({ isOnline })
             console.log(res)
             setInfo(res.data)
+        } catch (e) {
+            console.error(e)
         } finally {
             setLoading(false)
         }
@@ -56,23 +76,60 @@ export default function HomePage() {
         }
     }
 
+    const onAddLog = async () => {
+        await addLog()
+        message.success('操作成功')
+    }
+
+
     const onInitStockList = async () => {
         await initStockList()
         message.success('操作成功')
     }
 
+    const menuProp = {
+        items: [{
+            label: '记录temp',
+            key: 'temp'
+        }, {
+            label: '记录当天',
+            key: 'log'
+        }, {
+            label: '更新列表',
+            key: 'init'
+        }],
+        onClick: (e: any) => {
+            switch (e.key) {
+                case 'temp': return onLog()
+                case 'log': return onAddLog()
+                case 'init': return onInitStockList()
+            }
+        }
+    }
+
     return (
-        <Card style={{ width: '100%' }} title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
+        <Card className='my-card' title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
             <div style={{ marginBottom: 16 }}>
                 <Space align='center' style={{ width: '100%' }} wrap>
                     <Button type='primary' onClick={() => onGetList(0)} style={{ width: '100%' }}>日志查询</Button>
                     <Button type='primary' onClick={() => onGetList(1)} style={{ width: '100%' }}>实时查询</Button>
-                    <Button type='primary' onClick={onLog} style={{ width: '100%' }}>记录日志</Button>
-                    <Button danger type='primary' onClick={onInitStockList} style={{ width: '100%' }}>更新列表</Button>
+                    <Dropdown.Button menu={menuProp} trigger={["click"]} danger>
+                        更多
+                    </Dropdown.Button>
                 </Space>
             </div>
             <Spin spinning={loading}>
-                <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{ x: true, y: 500 }} />
+                {isMobile ? <List dataSource={info} pagination={{
+                    pageSize: 10
+                }} renderItem={(item) => (
+                    <List.Item >
+                        <List.Item.Meta
+                            title={`${item.name}(${item.code})`}
+                            description={<div><span>成交额：<b>{item.todayAmount}</b></span>&nbsp;&nbsp;&nbsp;<span>昨日：<b>{item.yesterdayAmount}</b></span></div>}
+                        />
+                    </List.Item>
+                )}></List> : <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{ x: true, y: 500 }} />
+                }
             </Spin>
         </Card>
     );

@@ -1,3 +1,6 @@
+import VConsole from 'vconsole';
+
+const vConsole = new VConsole();
 export function render(oldRender: Function) {
   if ('serviceWorker' in navigator && process.env.NODE_ENV === 'production') {
     window.addEventListener('load', () => {
