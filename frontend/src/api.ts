@@ -17,7 +17,7 @@ export function getStockList() {
 }
 
 export function goLog() {
-    return request.get('/temp')
+    return request.get('/add?isTemp=1')
 }
 export function initStockList() {
     return request.get('/init')

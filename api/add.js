@@ -32,12 +32,17 @@ export default async (req, res) => {
         return res.status(200).send('非交易日，不执行任务');
       }
 
+
       // 获取股票基础数据
       const { rows: stockList } = await client.query('SELECT * FROM stock_list');
       const marketData = await getStockList(stockList);
-      
+
       if (!Array.isArray(marketData)) {
         return res.status(400).json({ error: "Invalid data format" });
+      }
+
+      if (!marketData.length) {
+         return res.status(500).json({ error: "抓取数据失败" });
       }
 
       await client.query('BEGIN');
