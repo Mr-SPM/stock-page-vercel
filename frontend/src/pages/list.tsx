@@ -108,7 +108,7 @@ export default function HomePage() {
     }
 
     return (
-        <Card className='my-card' title="量化实时" extra={<Statistic title="交易日" value={dayjs(info[0]?.date).format('YYYY/MM/DD')} />}>
+        <Card className='my-card' title="量化实时" extra={<div style={{color: '#fff'}}>{dayjs(info[0]?.date).format('YYYY/MM/DD')}</div>}>
             <div style={{ marginBottom: 16 }}>
                 <Space align='center' style={{ width: '100%' }} wrap>
                     <Button type='primary' onClick={() => onGetList(0)} style={{ width: '100%' }}>日志查询</Button>

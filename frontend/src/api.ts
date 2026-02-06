@@ -30,3 +30,14 @@ export function addLog() {
 export function getTempList(params: { isOnline: 0 | 1 }) {
     return axios.get('https://stockapi.1168168.xyz/api/data', { params })
 }
+
+export function addETF(data: any) {
+    return axios.post('/api/etf/create', data)
+}
+export function queryETf(month: string) {
+    return axios.get('/api/etf/month', {
+        params: {
+            month
+        },
+    })
+}

@@ -4,7 +4,7 @@ import { GenerateSW } from 'workbox-webpack-plugin';
 export default defineConfig({
   routes: [
     { path: "/", component: "list" },
-    // { path: "/list", component: "list" },
+    { path: "/etf", component: "etf" },
   ],
   base: '/',
   publicPath: '/',
@@ -48,4 +48,5 @@ export default defineConfig({
       }
     `,
   ],
+     esbuildMinifyIIFE: true
 });

@@ -9,7 +9,7 @@
     "start": "npm run dev"
   },
   "dependencies": {
-    "antd": "^5.22.5",
+    "antd": "^6.2.3",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",
     "umi": "^4.4.2",
