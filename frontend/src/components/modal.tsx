@@ -1,6 +1,7 @@
 import { Modal, Form, Input, DatePicker, InputNumber, message } from 'antd';
 import dayjs from 'dayjs';
 import { addETF } from '../api'
+import { useEffect } from 'react';
 
 export default function EtfRecordModal({
   open,
@@ -33,6 +34,12 @@ export default function EtfRecordModal({
     }
   };
 
+  useEffect(() => {
+    if (open) {
+      form.setFieldsValue(initialValues)
+    }
+  }, [open,initialValues])
+
   return (
     <Modal
       title="新增 / 编辑 ETF 日记录"
@@ -42,7 +49,7 @@ export default function EtfRecordModal({
         form.resetFields();
         onClose(false);
       }}
-      destroyOnClose
+      destroyOnHidden
       okText="保存"
       cancelText="取消"
     >

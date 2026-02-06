@@ -25,9 +25,11 @@ export default function ETFPage() {
             </ul>
         }
     }
-    return <ConfigProvider locale={zhCN}><div className='my-etf'> <Calendar dateCellRender={dateCellRender} style={{ borderRadius: 8 }} onChange={(value) => {
-        setOpen(true);
-        setDate(value)
+    return <ConfigProvider locale={zhCN}><div className='my-etf'> <Calendar dateCellRender={dateCellRender} style={{ borderRadius: 8 }} onSelect={(value) => {
+        setDate(value);
+        setTimeout(() => {
+            setOpen(true);
+        },200)
     }} />
         <EtfRecordModal
             open={open}
