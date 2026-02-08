@@ -5,6 +5,7 @@ export default defineConfig({
   routes: [
     { path: "/", component: "list" },
     { path: "/etf", component: "etf" },
+    {path: "/charts/:date/:code/:name", component: 'charts' }
   ],
   base: '/',
   publicPath: '/',

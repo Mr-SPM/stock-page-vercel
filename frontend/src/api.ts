@@ -24,7 +24,7 @@ export function initStockList() {
 }
 
 export function addLog() {
-     return request.get('/add')
+    return request.get('/add')
 }
 
 export function getTempList(params: { isOnline: 0 | 1 }) {
@@ -39,5 +39,11 @@ export function queryETf(month: string) {
         params: {
             month
         },
+    })
+}
+
+export function queryETFSeries(params: any) {
+    return axios.get('/api/etf/series', {
+        params
     })
 }

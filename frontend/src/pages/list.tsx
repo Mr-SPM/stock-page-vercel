@@ -3,6 +3,7 @@ import { getList, goLog, initStockList, addLog } from '@/api';
 import { useEffect, useState } from 'react';
 import { ColumnType } from 'antd/es/table';
 import dayjs from 'dayjs';
+import { Footer } from 'antd/es/layout/layout';
 export default function HomePage() {
     const [info, setInfo] = useState<any[]>([])
     const [loading, setLoading] = useState(false)
@@ -108,7 +109,7 @@ export default function HomePage() {
     }
 
     return (
-        <Card className='my-card' title="量化实时" extra={<div style={{color: '#fff'}}>{dayjs(info[0]?.date).format('YYYY/MM/DD')}</div>}>
+        <Card className='my-card' title="量化实时" extra={<div style={{ color: '#fff' }}>{dayjs(info[0]?.date).format('YYYY/MM/DD')}</div>}>
             <div style={{ marginBottom: 16 }}>
                 <Space align='center' style={{ width: '100%' }} wrap>
                     <Button type='primary' onClick={() => onGetList(0)} style={{ width: '100%' }}>日志查询</Button>
@@ -131,6 +132,11 @@ export default function HomePage() {
                 )}></List> : <Table columns={items} dataSource={info} pagination={{ defaultPageSize: 10 }} scroll={{ x: true, y: 500 }} />
                 }
             </Spin>
+            <Footer>
+                <div style={{ textAlign: 'right' }}>
+                    数据来源：<a href='https://finance.sina.com.cn/'>新浪财经</a>
+                </div>
+            </Footer>
         </Card>
     );
 }

@@ -4,6 +4,7 @@ import dayjs, { Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react';
 import { queryETf } from '../api'
 import zhCN from 'antd/locale/zh_CN';
+import { useNavigate } from 'umi';
 export default function ETFPage() {
     const [open, setOpen] = useState(false);
     const [date, setDate] = useState(dayjs());
@@ -17,11 +18,13 @@ export default function ETFPage() {
         })
     }, [month])
 
+    const navigate = useNavigate()
+
     const dateCellRender = (value: Dayjs) => {
         const dateStr = value.format('YYYY-MM-DD')
         if (data[dateStr]) {
             return <ul className='my-date-list' onClick={(e) => e.stopPropagation()}>
-                {data[dateStr].map(item => <li>({item.etf_code}{item.etf_name})&nbsp;<span style={{ color: item.change_percent > 0 ? '#ff4d4f' : '#73d13d' }}>{item.change_percent}</span></li>)}
+                {data[dateStr].map(item => <li onClick={() => navigate(`/charts/${dateStr}/${item.etf_code}/${item.etf_name}`)} >({item.etf_code}{item.etf_name})&nbsp;<span style={{ color: item.change_percent > 0 ? '#ff4d4f' : '#73d13d' }}>{item.change_percent}</span></li>)}
             </ul>
         }
     }

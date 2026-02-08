@@ -12,6 +12,7 @@
     "antd": "^6.2.3",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",
+    "echarts-for-react": "^3.0.6",
     "umi": "^4.4.2",
     "workbox-webpack-plugin": "^7.3.0"
   },
