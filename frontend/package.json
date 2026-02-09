@@ -9,6 +9,8 @@
     "start": "npm run dev"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.60.0",
+    "@clerk/localizations": "^3.35.3",
     "antd": "^6.2.3",
     "axios": "^1.7.9",
     "dayjs": "^1.11.13",

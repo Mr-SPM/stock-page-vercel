@@ -18,7 +18,9 @@ export default defineConfig({
     }
   },
   define: {
-    TOKEN: process.env.TOKEN
+    TOKEN: process.env.TOKEN,
+    CLERK_SECRET_KEY: process.env.CLERK_SECRET_KEY,
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
   },
   links: [{ rel: 'manifest', href: '/manifest.json' }],
   chainWebpack(memo) {
