@@ -1,105 +1,64 @@
-import React, { useEffect, useState } from 'react';
-import ReactECharts from 'echarts-for-react';
-import { useParams } from 'umi'
-import { queryETFSeries } from '@/api';
-function calcCumulative(series: any) {
-    let netValue = 1;
+import React, { useEffect, useState } from "react";
+import { Spin, Alert } from "antd";
+import EtfSingleChart from "../components/single";
+import { useParams } from "umi";
 
-    return series.map((item: any) => {
-        netValue *= 1 + item.change_percent / 100;
-        return Number(((netValue - 1) * 100).toFixed(2));
-    });
-}
+export default function EtfDetail() {
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [chartData, setChartData] = useState<any>(null);
+    const params = useParams();
+    const month = params.month;
+    const symbol = params.code;
 
-
-export default function EtfMonthChart() {
-    const [data, setData] = useState<any[]>([]);
-    const params = useParams()
-    const date = params.date
-    const etfCode = params.code
-    const name = params.name
     useEffect(() => {
-        if (!date || !etfCode) return;
+        if (!month || !symbol) return;
 
-        queryETFSeries({
-            date,
-            etf_code: etfCode
-        }
-        )
-            .then(res => {
-                setData(res.data.data || []);
-            });
-    }, [date, etfCode]);
+        async function fetchData() {
+            setLoading(true);
+            setError(null);
 
-    const dailyChange = data.map(d => d.change_percent);
-    const dates = data.map(d => d.trade_date);
-    const cumulativeChange = calcCumulative(data);
+            try {
+                const res = await fetch(
+                    `/api/etf/series-single?month=${month}&symbol=${symbol}`
+                );
 
-    const option = {
-        title: {
-            text: `${etfCode} ${name} 当月走势（波动 & 累计）`
-        },
-        tooltip: {
-            trigger: 'axis',
-            formatter: (params) => {
-                const date = params[0].axisValue;
-                const daily = params.find(p => p.seriesName === '日涨跌幅')?.value;
-                const cumulative = params.find(p => p.seriesName === '累计涨跌幅')?.value;
+                const json = await res.json();
 
-                return `
-        <strong>${date}</strong><br/>
-        日涨跌幅：${daily}%<br/>
-        累计涨跌幅：${cumulative}%
-      `;
-            }
-        },
-        legend: {
-            data: ['日涨跌幅', '累计涨跌幅']
-        },
-        grid: {
-            left: 60,
-            right: 20,
-            top: 60,
-            bottom: 50
-        },
-        xAxis: {
-            type: 'category',
-            data: dates,
-            axisLabel: {
-                rotate: 45
-            }
-        },
-        yAxis: {
-            type: 'value',
-            axisLabel: {
-                formatter: '{value}%'
-            }
-        },
-        series: [
-            {
-                name: '日涨跌幅',
-                type: 'bar',
-                data: dailyChange.map(v => ({
-                    value: v,
-                    itemStyle: {
-                        color: v >= 0 ? '#f5222d' : '#52c41a',
-                    },
-                })),
-            },
-            {
-                name: '累计涨跌幅',
-                type: 'line',
-                data: cumulativeChange,
-                smooth: false,
-                symbol: 'none',
-                lineStyle: {
-                    width: 2,
-                    color: '#f5222d'
+                if (!json.success) {
+                    throw new Error(json.error || "Request failed");
                 }
+
+                setChartData(json);
+            } catch (err) {
+                setError(err.message);
+            } finally {
+                setLoading(false);
             }
-        ]
-    };
+        }
 
+        fetchData();
+    }, [month, symbol]);
 
-    return <div style={{ height: 400, width: '80%', padding: 16, background: '#fff1f0' }}> <ReactECharts option={option} style={{ height: 400, width: '100%' }} /></div>;
+    if (loading) {
+        return <Spin />;
+    }
+
+    if (error) {
+        return <Alert type="error" message={error} />;
+    }
+
+    if (!chartData) {
+        return null;
+    }
+
+    return (
+        <div style={{ padding: 24, width: '100%' }}>
+            <EtfSingleChart
+                data={chartData.data}
+                name={chartData.name}
+                symbol={chartData.symbol}
+            />
+        </div>
+    );
 }

@@ -5,7 +5,9 @@ export default defineConfig({
   routes: [
     { path: "/", component: "list" },
     { path: "/etf", component: "etf" },
-    { path: "/charts/:date/:code/:name", component: "charts" },
+    { path: "/charts/:month/:code", component: "charts" },
+    { path: "/all/:month", component: "all" },
+    { path: "/dashboard", component: "dashboardPro" },
   ],
 
   base: "/",

@@ -2,7 +2,7 @@ import { pool } from '../../lib/pool.js';
 
 function nextMonth(month) {
   const [y, m] = month.split('-').map(Number);
-  const d = new Date(y, m, 1);
+  const d = new Date(y, m, 1); // JS 的 m 是下个月
   return d.toISOString().slice(0, 10);
 }
 
@@ -18,26 +18,35 @@ export default async (req, res) => {
 
   try {
     const client = await pool.connect();
+
     try {
       const { rows } = await client.query(
         `
         SELECT
           trade_date::text AS trade_date,
-          etf_code,
-          etf_name,
-          change_percent
-        FROM etf_daily_record
+          symbol,
+          name,
+          percent
+        FROM etf_daily
         WHERE trade_date >= $1
           AND trade_date < $2
-        ORDER BY trade_date ASC;
+       ORDER BY trade_date ASC, percent DESC;
         `,
         [startDate, endDate]
       );
 
+      // ==========================
+      // 按日期分组（保持你原逻辑）
+      // ==========================
       const grouped = {};
+
       for (const row of rows) {
-        const dateKey = row.trade_date; // 已是 YYYY-MM-DD
-        if (!grouped[dateKey]) grouped[dateKey] = [];
+        const dateKey = row.trade_date;
+
+        if (!grouped[dateKey]) {
+          grouped[dateKey] = [];
+        }
+
         grouped[dateKey].push(row);
       }
 
@@ -50,8 +59,10 @@ export default async (req, res) => {
     } finally {
       client.release();
     }
+
   } catch (err) {
     console.error('Query ETF month error:', err);
+
     res.status(500).json({
       error: 'Database error',
       details: err.message
