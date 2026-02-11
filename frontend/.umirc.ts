@@ -8,6 +8,7 @@ export default defineConfig({
     { path: "/charts/:month/:code", component: "charts" },
     { path: "/all/:month", component: "all" },
     { path: "/dashboard", component: "dashboardPro" },
+    { path: "/x", component: "dashboardX" },
   ],
 
   base: "/",
