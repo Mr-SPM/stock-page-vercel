@@ -1,5 +1,5 @@
 import { Pool, neonConfig} from '@neondatabase/serverless';
-import { getOnlineStockList } from '../lib/request.js';
+import { getOnlineStockList } from '../../lib/request.js';
 import ws from 'ws'
 
 neonConfig.webSocketConstructor = ws;
