@@ -1,4 +1,4 @@
-import { pool } from '../../lib/pool.js';
+import { pool } from '../lib/pool.js';
 
 export default async (req, res) => {
   if (req.method !== 'POST') {
