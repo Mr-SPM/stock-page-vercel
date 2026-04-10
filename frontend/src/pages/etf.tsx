@@ -31,6 +31,7 @@ export default function ETFPage() {
     return <ConfigProvider locale={zhCN}><div className='my-etf'>
         <Button danger style={{marginBottom: 16}} onClick={() => navigate('/all/' + month)}>榜单</Button>
         <Calendar dateCellRender={dateCellRender} style={{ borderRadius: 8 }} onSelect={(value) => {
+        setMonth(value.format('YYYY-MM'))
         setDate(value);
         setTimeout(() => {
             setOpen(true);
