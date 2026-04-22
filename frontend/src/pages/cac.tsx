@@ -412,10 +412,10 @@ export default function InvestmentPro() {
                       <div className="flex flex-col gap-1 text-sm">
                         <span
                           className={`font-semibold ${item.d.action === "ADD"
-                              ? "text-green-600"
-                              : item.d.action === "REDUCE"
-                                ? "text-orange-500"
-                                : "text-red-500"
+                            ? "text-green-600"
+                            : item.d.action === "REDUCE"
+                              ? "text-orange-500"
+                              : "text-red-500"
                             }`}
                         >
                           {item.d.action}
@@ -426,10 +426,10 @@ export default function InvestmentPro() {
 
                         <span
                           className={`${item.d.risk === "高"
-                              ? "text-red-500"
-                              : item.d.risk === "中"
-                                ? "text-yellow-500"
-                                : "text-green-600"
+                            ? "text-red-500"
+                            : item.d.risk === "中"
+                              ? "text-yellow-500"
+                              : "text-green-600"
                             }`}
                         >
                           风险：{item.d.risk}
@@ -475,28 +475,13 @@ export default function InvestmentPro() {
             {/* ===== 日轨迹 ===== */}
             <div className="flex flex-wrap gap-2 mb-3">
               {g.days.map((d, i) => {
-                const slice = g.days.slice(0, i + 1);
+                return <InputNumber
+                  value={d}
+                  step={0.1}
+                  style={{ width: 90 }}
+                  onChange={(v) => updateDay(idx, i, v)}
+                />
 
-                const cur = simulateStrategy(slice, "BASE");
-                const prev = simulateStrategy(slice.slice(0, -1), "BASE");
-
-                const change =
-                  cur.positionCurve.slice(-1)[0] -
-                  (prev.positionCurve.slice(-1)[0] || 0);
-
-                let color = "bg-gray-200";
-
-                if (change < 0) color = "bg-green-400";
-                if (change > 0) color = "bg-red-400";
-
-                return (
-                  <div
-                    key={i}
-                    className={`px-2 py-1 rounded text-xs text-white ${color}`}
-                  >
-                    {d}%
-                  </div>
-                );
               })}
             </div>
 
