@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Card, Button, Input, InputNumber, Space,
   Tag, Typography, Modal, Tooltip,
-  Row, Col, Statistic, Divider, Table
+  Row, Col, Statistic, Divider, Table,
+  Flex
 } from "antd";
 import ReactECharts from "echarts-for-react";
 
@@ -196,6 +197,364 @@ function getStrategyResult(days) {
       .toFixed(2)
   };
 }
+
+function generateCapitalCurves(days) {
+  let price = 100;
+
+  let position = 10000;
+  let cash = 0;
+  let totalInvested = 10000;
+
+  let addCount = 0;
+
+  let peakPrice = 100;
+  let peakAsset = 10000;
+
+  const assetCurve = [];
+  const positionCurve = [];
+  const investedCurve = [];
+  const profitCurve = [];
+  const benchmarkCurve = [];
+  const drawdownCurve = [];
+
+  const buyPoints = [];
+  const sellPoints = [];
+
+  for (let i = 0; i < days.length; i++) {
+    const r = Number(days[i]);
+    if (isNaN(r)) continue;
+
+    // ===== 价格变化 =====
+    price *= (1 + r / 100);
+    peakPrice = Math.max(peakPrice, price);
+
+    const drawdownPrice = (price - peakPrice) / peakPrice;
+
+    // ===== 持仓变化 =====
+    position *= (1 + r / 100);
+
+    let action = "HOLD";
+
+    // ===== 减仓逻辑 =====
+    if (drawdownPrice < -0.07) {
+      cash += position;
+      position = 0;
+      action = "EXIT";
+    } else if (drawdownPrice < -0.04) {
+      const sell = position * 0.7;
+      position -= sell;
+      cash += sell;
+      action = "STRONG_REDUCE";
+    } else if (drawdownPrice < -0.02) {
+      const sell = position * 0.5;
+      position -= sell;
+      cash += sell;
+      action = "REDUCE";
+    }
+
+    // ===== 加仓逻辑 =====
+    if (r > 0 && drawdownPrice > -0.02 && addCount < 3) {
+      position += 10000;
+      totalInvested += 10000;
+      addCount++;
+      action = "ADD";
+    }
+
+    const totalAsset = position + cash;
+
+    // ===== 回撤（基于资产）=====
+    peakAsset = Math.max(peakAsset, totalAsset);
+    const drawdownAsset = (totalAsset - peakAsset) / peakAsset;
+
+    // ===== 基准 =====
+    const benchmark = 10000 * (price / 100);
+
+    // ===== 记录曲线 =====
+    assetCurve.push(Math.round(totalAsset));
+    positionCurve.push(Math.round(position));
+    investedCurve.push(totalInvested);
+    profitCurve.push(Math.round(totalAsset - totalInvested));
+    benchmarkCurve.push(Math.round(benchmark));
+    drawdownCurve.push((drawdownAsset * 100).toFixed(2));
+
+    // ===== 标记点 =====
+    if (action === "ADD") {
+      buyPoints.push({
+        coord: [`Day ${i + 1}`, Math.round(totalAsset)],
+        value: "加"
+      });
+    }
+
+    if (["REDUCE", "STRONG_REDUCE", "EXIT"].includes(action)) {
+      sellPoints.push({
+        coord: [`Day ${i + 1}`, Math.round(totalAsset)],
+        value: "减"
+      });
+    }
+  }
+
+  return {
+    assetCurve,
+    positionCurve,
+    investedCurve,
+    profitCurve,
+    benchmarkCurve,
+    drawdownCurve,
+    buyPoints,
+    sellPoints
+  };
+}
+
+function generateCapitalCurvesPro(days) {
+  let price = 100;
+
+  let position = 10000;
+  let cash = 0;
+  let totalInvested = 10000;
+
+  let peakPrice = 100;
+  let peakAsset = 10000;
+
+  let addCount = 0;
+
+  const assetCurve = [];
+  const positionCurve = [];
+  const investedCurve = [];
+  const profitCurve = [];
+  const benchmarkCurve = [];
+  const drawdownCurve = [];
+
+  const buyPoints = [];
+  const sellPoints = [];
+
+  for (let i = 0; i < days.length; i++) {
+    const r = Number(days[i]);
+    if (isNaN(r)) continue;
+
+    // ===== 价格 =====
+    price *= (1 + r / 100);
+    peakPrice = Math.max(peakPrice, price);
+
+    const drawdownPrice = (price - peakPrice) / peakPrice;
+
+    // ===== 持仓变化 =====
+    position *= (1 + r / 100);
+
+    // ===== 趋势判断 =====
+    const recent = days.slice(Math.max(0, i - 2), i + 1)
+      .map(Number)
+      .filter(v => !isNaN(v));
+
+    const recentSum = recent.reduce((a, b) => a + b, 0);
+    const hasPullback = recent.some(v => v < 0);
+
+    const last2 = recent.slice(-2);
+    const twoDown = last2.length === 2 && last2.every(v => v < 0);
+
+    let action = "HOLD";
+
+    // ===== 风控优先 =====
+    if (twoDown && position > 0) {
+      const sell = position * 0.3;
+      position -= sell;
+      cash += sell;
+      action = "REDUCE";
+    }
+
+    if (drawdownPrice < -0.03 && position > 0) {
+      const sell = position * 0.5;
+      position -= sell;
+      cash += sell;
+      action = "STRONG_REDUCE";
+    }
+
+    if (drawdownPrice < -0.06 && position > 0) {
+      cash += position;
+      position = 0;
+      action = "EXIT";
+    }
+
+    // ===== 加仓（优化后）=====
+    const trendOK = recentSum > 1;
+
+    if (
+      trendOK &&
+      hasPullback &&
+      r > 0 &&
+      drawdownPrice > -0.03 &&
+      addCount < 2
+    ) {
+      position += 10000;
+      totalInvested += 10000;
+      addCount++;
+      action = "ADD";
+    }
+
+    const totalAsset = position + cash;
+
+    // ===== 回撤 =====
+    peakAsset = Math.max(peakAsset, totalAsset);
+    const drawdown = (totalAsset - peakAsset) / peakAsset;
+
+    const benchmark = 10000 * (price / 100);
+
+    // ===== 曲线记录 =====
+    assetCurve.push(Math.round(totalAsset));
+    positionCurve.push(Math.round(position));
+    investedCurve.push(totalInvested);
+    profitCurve.push(Math.round(totalAsset - totalInvested));
+    benchmarkCurve.push(Math.round(benchmark));
+    drawdownCurve.push((drawdown * 100).toFixed(2));
+
+    // ===== 标记 =====
+    if (action === "ADD") {
+      buyPoints.push({
+        coord: [`Day ${i + 1}`, totalAsset],
+        value: "加"
+      });
+    }
+
+    if (["REDUCE", "STRONG_REDUCE", "EXIT"].includes(action)) {
+      sellPoints.push({
+        coord: [`Day ${i + 1}`, totalAsset],
+        value: "减"
+      });
+    }
+  }
+
+  return {
+    assetCurve,
+    positionCurve,     // ✅ 回来了
+    investedCurve,     // ✅ 回来了
+    profitCurve,
+    benchmarkCurve,
+    drawdownCurve,
+    buyPoints,
+    sellPoints
+  };
+}
+function getDualAxisOption(days, isPro = false) {
+  const {
+    assetCurve,
+    positionCurve,
+    investedCurve,
+    profitCurve,
+    benchmarkCurve,
+    drawdownCurve,
+    buyPoints,
+    sellPoints
+  } = isPro ? generateCapitalCurvesPro(days) : generateCapitalCurves(days);
+
+  const xData = assetCurve.map((_, i) => `Day ${i + 1}`);
+
+  return {
+    tooltip: {
+      trigger: "axis"
+    },
+
+    legend: {
+      data: [
+        "总资产",
+        "利润",
+        "持有基准",
+        "持仓占用",
+        "累计投入",
+        "回撤"
+      ]
+    },
+
+    xAxis: {
+      type: "category",
+      data: xData
+    },
+
+    yAxis: [
+      {
+        type: "value",
+        name: "资产 / 利润"
+      },
+      {
+        type: "value",
+        name: "回撤 %",
+        axisLabel: {
+          formatter: "{value}%"
+        }
+      }
+    ],
+
+    series: [
+      // ===== 总资产 =====
+      {
+        name: "总资产",
+        type: "line",
+        data: assetCurve,
+        smooth: true,
+
+        markPoint: {
+          data: [
+            ...buyPoints.map(p => ({
+              ...p,
+              itemStyle: { color: "green" }
+            })),
+            ...sellPoints.map(p => ({
+              ...p,
+              itemStyle: { color: "red" }
+            }))
+          ]
+        }
+      },
+
+      // ===== 利润（核心）=====
+      {
+        name: "利润",
+        type: "line",
+        data: profitCurve,
+        smooth: true
+      },
+
+      // ===== 基准 =====
+      {
+        name: "持有基准",
+        type: "line",
+        data: benchmarkCurve,
+        smooth: true,
+        lineStyle: {
+          type: "dashed"
+        }
+      },
+
+      // ===== 持仓占用 =====
+      {
+        name: "持仓占用",
+        type: "line",
+        data: positionCurve,
+        smooth: true
+      },
+
+      // ===== 累计投入 =====
+      {
+        name: "累计投入",
+        type: "line",
+        data: investedCurve,
+        lineStyle: {
+          type: "dotted"
+        }
+      },
+
+      // ===== 回撤（阴影）=====
+      {
+        name: "回撤",
+        type: "line",
+        data: drawdownCurve,
+        yAxisIndex: 1,
+        smooth: true,
+        areaStyle: {
+          opacity: 0.15
+        }
+      }
+    ]
+  };
+}
 // ===== 主组件 =====
 export default function InvestmentPro() {
   const [list, setList] = useState(() => {
@@ -271,7 +630,7 @@ export default function InvestmentPro() {
     : null;
 
   return (
-    <div style={{ maxWidth: 1200, margin: "auto", padding: 20 }}>
+    <div style={{ maxWidth: 1200, margin: "auto", padding: 20, overflowY: 'auto' }}>
       <Title level={3}>策略终端 Pro</Title>
 
       {/* KPI */}
@@ -405,6 +764,12 @@ export default function InvestmentPro() {
                 删除
               </Button>
             </div>
+            <Card title="资金 & 仓位曲线（双轴）">
+              <Flex>
+                <ReactECharts style={{flex: 1}} option={getDualAxisOption(g.days)} />
+                <ReactECharts style={{flex: 1}} option={getDualAxisOption(g.days, true)} />
+              </Flex>
+            </Card>
           </Card>
         );
       })}

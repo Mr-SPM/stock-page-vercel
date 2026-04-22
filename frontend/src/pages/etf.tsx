@@ -1,4 +1,4 @@
-+import EtfRecordModal from '@/components/modal';
+import EtfRecordModal from '@/components/modal';
 import { Button, Calendar, ConfigProvider } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react';
