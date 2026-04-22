@@ -486,8 +486,8 @@ export default function InvestmentPro() {
 
                 let color = "bg-gray-200";
 
-                if (change > 0) color = "bg-green-400";
-                if (change < 0) color = "bg-red-400";
+                if (change < 0) color = "bg-green-400";
+                if (change > 0) color = "bg-red-400";
 
                 return (
                   <div
