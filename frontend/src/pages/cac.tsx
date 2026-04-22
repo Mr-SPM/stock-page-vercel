@@ -343,195 +343,175 @@ export default function InvestmentPro() {
   };
 
   return (
-    <div style={{ maxWidth: 1200, margin: "auto", padding: 20 }}>
-      <Title level={3}>ETF 策略终端（双策略对比）</Title>
+    <div className="max-w-[1400px] mx-auto p-6 bg-gray-50 min-h-screen">
+      <h1 className="text-2xl font-semibold mb-6">
+        ETF 策略终端（双策略量化）
+      </h1>
 
       {list.map((g, idx) => {
         const base = simulateStrategy(g.days, "BASE");
         const pro = simulateStrategy(g.days, "PRO");
 
+        const baseSignal =
+          g.today !== null
+            ? getRealtimeSignal(g.days, g.today, "BASE")
+            : null;
+
+        const proSignal =
+          g.today !== null
+            ? getRealtimeSignal(g.days, g.today, "PRO")
+            : null;
+
+        const holdProfit =
+          base.benchmarkCurve.length > 0
+            ? base.benchmarkCurve.slice(-1)[0] - 10000
+            : 0;
+
         return (
-          <Card key={idx} style={{ marginBottom: 20 }}>
-            <Input
-              placeholder="名称"
-              value={g.name}
-              onChange={(e) => {
-                const arr = [...list];
-                arr[idx].name = e.target.value;
-                setList(arr);
-              }}
-            />
-            <InputNumber
-              style={{ width: "100%", marginTop: 10 }}
-              placeholder="今日涨跌%"
-              value={g.today}
-              onChange={(v) => {
-                const arr = [...list];
-                arr[idx].today = v;
-                setList(arr);
-              }}
-            />
+          <div
+            key={idx}
+            className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm"
+          >
+            {/* ===== 输入区 ===== */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              <Input
+                placeholder="ETF名称"
+                value={g.name}
+                onChange={(e) => {
+                  const arr = [...list];
+                  arr[idx].name = e.target.value;
+                  setList(arr);
+                }}
+              />
 
+              <InputNumber
+                className="w-full"
+                placeholder="今日涨跌 %"
+                value={g.today}
+                onChange={(v) => {
+                  const arr = [...list];
+                  arr[idx].today = v;
+                  setList(arr);
+                }}
+              />
+            </div>
+
+            {/* ===== 实时决策 ===== */}
             {g.today !== null && (
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                {[{ t: "BASE", d: baseSignal }, { t: "PRO", d: proSignal }].map(
+                  (item, i) => (
+                    <div
+                      key={i}
+                      className="border rounded-lg p-4 bg-gray-50"
+                    >
+                      <div className="font-medium mb-2">
+                        {item.t} 策略
+                      </div>
 
-              () => {
-                const baseSignal = getRealtimeSignal(g.days, g.today, "BASE");
-                const proSignal = getRealtimeSignal(g.days, g.today, "PRO");
+                      <div className="flex flex-col gap-1 text-sm">
+                        <span
+                          className={`font-semibold ${item.d.action === "ADD"
+                              ? "text-green-600"
+                              : item.d.action === "REDUCE"
+                                ? "text-orange-500"
+                                : "text-red-500"
+                            }`}
+                        >
+                          {item.d.action}
+                        </span>
 
-                const riskColor = {
-                  低: "green",
-                  中: "orange",
-                  高: "red"
-                };
+                        <span>操作金额：{item.d.changeAmount}</span>
+                        <span>建议仓位：{item.d.positionPct}%</span>
 
-                return <Card style={{ marginTop: 12 }}>
-                  <Row gutter={16}>
-                    {/* ===== BASE ===== */}
-                    <Col span={12}>
-                      <Card size="small" title="BASE 实时决策">
-                        <Space direction="vertical">
+                        <span
+                          className={`${item.d.risk === "高"
+                              ? "text-red-500"
+                              : item.d.risk === "中"
+                                ? "text-yellow-500"
+                                : "text-green-600"
+                            }`}
+                        >
+                          风险：{item.d.risk}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
 
-                          <Tag color={baseSignal.action === "ADD" ? "green" : baseSignal.action === "REDUCE" ? "orange" : "red"}>
-                            {baseSignal.action}
-                          </Tag>
+            {/* ===== KPI ===== */}
+            <div className="grid grid-cols-4 gap-4 mb-4">
+              <div className="bg-gray-50 p-3 rounded">
+                <div className="text-xs text-gray-500">BASE收益</div>
+                <div className="text-green-600 font-semibold">
+                  {Math.round(base.profit)}
+                </div>
+              </div>
 
-                          <Text>
-                            操作金额：{baseSignal.changeAmount}
-                          </Text>
+              <div className="bg-gray-50 p-3 rounded">
+                <div className="text-xs text-gray-500">PRO收益</div>
+                <div className="text-blue-600 font-semibold">
+                  {Math.round(pro.profit)}
+                </div>
+              </div>
 
-                          <Text>
-                            建议仓位：{baseSignal.positionPct}%
-                          </Text>
+              <div className="bg-gray-50 p-3 rounded">
+                <div className="text-xs text-gray-500">持有收益</div>
+                <div className="text-gray-700 font-semibold">
+                  {Math.round(holdProfit)}
+                </div>
+              </div>
 
-                          <Tag color={riskColor[baseSignal.risk]}>
-                            风险：{baseSignal.risk}
-                          </Tag>
+              <div className="bg-gray-50 p-3 rounded">
+                <div className="text-xs text-gray-500">PRO超额</div>
+                <div className="text-purple-600 font-semibold">
+                  {Math.round(pro.profit - holdProfit)}
+                </div>
+              </div>
+            </div>
 
-                        </Space>
-                      </Card>
-                    </Col>
-
-                    {/* ===== PRO ===== */}
-                    <Col span={12}>
-                      <Card size="small" title="PRO 实时决策">
-                        <Space direction="vertical">
-
-                          <Tag color={proSignal.action === "ADD" ? "green" : proSignal.action === "REDUCE" ? "orange" : "red"}>
-                            {proSignal.action}
-                          </Tag>
-
-                          <Text>
-                            操作金额：{proSignal.changeAmount}
-                          </Text>
-
-                          <Text>
-                            建议仓位：{proSignal.positionPct}%
-                          </Text>
-
-                          <Tag color={riskColor[proSignal.risk]}>
-                            风险：{proSignal.risk}
-                          </Tag>
-
-                        </Space>
-                      </Card>
-                    </Col>
-                  </Row>
-                </Card>
-              })()}
-
-
-
-            <Space wrap style={{ marginTop: 10 }}>
+            {/* ===== 日轨迹 ===== */}
+            <div className="flex flex-wrap gap-2 mb-3">
               {g.days.map((d, i) => {
                 const slice = g.days.slice(0, i + 1);
 
-                const base = simulateStrategy(slice, "BASE");
+                const cur = simulateStrategy(slice, "BASE");
                 const prev = simulateStrategy(slice.slice(0, -1), "BASE");
 
-                const change = base.totalInvested - (prev.totalInvested || 10000);
+                const change =
+                  cur.positionCurve.slice(-1)[0] -
+                  (prev.positionCurve.slice(-1)[0] || 0);
 
-                let action = "HOLD";
-                if (change > 0) action = "ADD";
-                if (change < 0) action = "REDUCE";
+                let color = "bg-gray-200";
 
-                const colorMap = {
-                  ADD: "green",
-                  HOLD: "orange",
-                  REDUCE: "red"
-                };
+                if (change > 0) color = "bg-green-400";
+                if (change < 0) color = "bg-red-400";
 
                 return (
-                  <Space key={i} direction="vertical" align="center">
-                    <InputNumber
-                      value={d}
-                      onChange={(v) => updateDay(idx, i, v)}
-                    />
-
-                    <Tooltip
-                      title={
-                        <div>
-                          <div>操作：{action}</div>
-                          <div>金额：{change > 0 ? "+" : ""}{Math.round(change)}</div>
-                          <div>总资产：{Math.round(base.finalAsset)}</div>
-                          <div>收益：{Math.round(base.profit)}</div>
-                        </div>
-                      }
-                    >
-                      <Tag color={colorMap[action]}>
-                        {action}
-                      </Tag>
-                    </Tooltip>
-                  </Space>
+                  <div
+                    key={i}
+                    className={`px-2 py-1 rounded text-xs text-white ${color}`}
+                  >
+                    {d}%
+                  </div>
                 );
               })}
-            </Space>
-
-            <div style={{ marginTop: 10 }}>
-              <Button onClick={() => addDay(idx)}>+ 天</Button>
             </div>
 
-            <Divider />
+            <Button onClick={() => addDay(idx)}>+ 天</Button>
 
-            {(() => {
-              const benchmark = simulateStrategy(g.days, "BASE"); // 用价格曲线
-              const hold = 10000 * (benchmark.benchmarkCurve.slice(-1)[0] / 10000);
-
-              return (
-                <>
-                  <Text>
-                    BASE：{Math.round(base.profit)}（{base.returnRate}%）
-                  </Text>
-                  <br />
-
-                  <Text>
-                    PRO：{Math.round(pro.profit)}（{pro.returnRate}%）
-                  </Text>
-                  <br />
-
-                  <Text>
-                    持有：{Math.round(hold - 10000)}
-                  </Text>
-                  <br />
-
-                  <Text style={{ color: "green" }}>
-                    BASE超额：{Math.round(base.profit - (hold - 10000))}
-                  </Text>
-                  <br />
-
-                  <Text style={{ color: "purple" }}>
-                    PRO超额：{Math.round(pro.profit - (hold - 10000))}
-                  </Text>
-                </>
-              );
-            })()}
-
-            <Divider />
-
-            <Flex>
-              <ReactECharts style={{ flex: 1 }} option={getOption(g.days, "BASE")} />
-              <ReactECharts style={{ flex: 1 }} option={getOption(g.days, "PRO")} />
-            </Flex>
-          </Card>
+            {/* ===== 图表 ===== */}
+            <div className="flex gap-4 mt-5">
+              <div className="flex-1">
+                <ReactECharts option={getOption(g.days, "BASE")} />
+              </div>
+              <div className="flex-1">
+                <ReactECharts option={getOption(g.days, "PRO")} />
+              </div>
+            </div>
+          </div>
         );
       })}
     </div>
