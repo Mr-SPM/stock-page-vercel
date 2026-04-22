@@ -1,4 +1,4 @@
-import EtfRecordModal from '@/components/modal';
++import EtfRecordModal from '@/components/modal';
 import { Button, Calendar, ConfigProvider } from 'antd'
 import dayjs, { Dayjs } from 'dayjs'
 import { useEffect, useState } from 'react';
@@ -38,9 +38,6 @@ export default function ETFPage() {
         <Calendar dateCellRender={dateCellRender} style={{ borderRadius: 8 }} onSelect={(value) => {
             setMonth(value.format('YYYY-MM'))
             setDate(value);
-            setTimeout(() => {
-                setOpen(true);
-            }, 200)
         }} />
         <EtfRecordModal
             open={open}
