@@ -15,6 +15,60 @@ const normalize = (v) => {
   return isNaN(n) ? null : n;
 };
 
+function getDaySignalWithPosition(days, index) {
+  const slice = days.slice(0, index + 1).map(Number).filter(v => !isNaN(v));
+
+  let price = 100;
+  let peak = 100;
+  let position = 10000;
+  let addCount = 0;
+
+  for (let i = 0; i < slice.length; i++) {
+    const r = slice[i];
+
+    price *= (1 + r / 100);
+    peak = Math.max(peak, price);
+
+    const drawdown = (price - peak) / peak;
+    const recent = slice.slice(Math.max(0, i - 2), i + 1)
+      .reduce((a, b) => a + b, 0);
+
+    let action = "HOLD";
+    let changeAmount = 0;
+
+    if (drawdown < -0.07) {
+      action = "EXIT";
+      changeAmount = -position;
+      position = 0;
+    } else if (drawdown < -0.04) {
+      action = "STRONG_REDUCE";
+      changeAmount = -position * 0.7;
+      position *= 0.3;
+    } else if (drawdown < -0.02) {
+      action = "REDUCE";
+      changeAmount = -position * 0.5;
+      position *= 0.5;
+    }
+
+    if (r > 0 && drawdown > -0.02 && recent > 0 && addCount < 3) {
+      action = "ADD";
+      changeAmount = 10000;
+      position += 10000;
+      addCount++;
+    }
+
+    if (i === slice.length - 1) {
+      return {
+        action,
+        drawdown: (drawdown * 100).toFixed(2),
+        position: Math.round(position),
+        changeAmount: Math.round(changeAmount),
+        price: price.toFixed(2)
+      };
+    }
+  }
+}
+
 // ===== 信号计算（含置信度）=====
 function getActionDetail(days, today) {
   const clean = days.map(Number).filter(v => !isNaN(v));
@@ -69,6 +123,79 @@ function getActionDetail(days, today) {
   };
 }
 
+function getBenchmarkResult(days) {
+  let price = 100;
+
+  for (const r of days) {
+    const n = Number(r);
+    if (isNaN(n)) continue;
+    price *= (1 + n / 100);
+  }
+
+  const finalAsset = 10000 * (price / 100);
+
+  return {
+    totalInvested: 10000,
+    finalAsset,
+    profit: finalAsset - 10000,
+    returnRate: ((finalAsset - 10000) / 10000 * 100).toFixed(2)
+  };
+}
+function getStrategyResult(days) {
+  let price = 100;
+
+  let position = 10000;      // 当前持仓市值
+  let totalInvested = 10000; // 总投入
+  let cash = 0;
+
+  let peak = 100;
+  let addCount = 0;
+
+  for (const r0 of days) {
+    const r = Number(r0);
+    if (isNaN(r)) continue;
+
+    // 价格变化
+    price *= (1 + r / 100);
+    peak = Math.max(peak, price);
+
+    const drawdown = (price - peak) / peak;
+
+    // 持仓随价格变化
+    position *= (1 + r / 100);
+
+    // ===== 减仓逻辑 =====
+    if (drawdown < -0.07) {
+      cash += position;
+      position = 0;
+    } else if (drawdown < -0.04) {
+      const sell = position * 0.7;
+      position -= sell;
+      cash += sell;
+    } else if (drawdown < -0.02) {
+      const sell = position * 0.5;
+      position -= sell;
+      cash += sell;
+    }
+
+    // ===== 加仓逻辑 =====
+    if (r > 0 && drawdown > -0.02 && addCount < 3) {
+      position += 10000;
+      totalInvested += 10000;
+      addCount++;
+    }
+  }
+
+  const finalAsset = position + cash;
+
+  return {
+    totalInvested,
+    finalAsset,
+    profit: finalAsset - totalInvested,
+    returnRate: ((finalAsset - totalInvested) / totalInvested * 100)
+      .toFixed(2)
+  };
+}
 // ===== 主组件 =====
 export default function InvestmentPro() {
   const [list, setList] = useState(() => {
@@ -123,9 +250,9 @@ export default function InvestmentPro() {
 
   const portfolioSignal =
     stats.ADD > list.length / 2 ? "偏强" :
-    (stats.EXIT + stats.REDUCE + stats.STRONG_REDUCE) > list.length / 2
-      ? "风险上升"
-      : "观望";
+      (stats.EXIT + stats.REDUCE + stats.STRONG_REDUCE) > list.length / 2
+        ? "风险上升"
+        : "观望";
 
   // ===== 图表 =====
   const baseCurve = list.flatMap(g =>
@@ -160,7 +287,12 @@ export default function InvestmentPro() {
       {/* 投资项 */}
       {list.map((g, idx) => {
         const detail = signals[idx];
-
+        const strategy = getStrategyResult(g.days);
+        const benchmark = getBenchmarkResult(g.days);
+        const normalized = (strategy.profit / 10000 * 100).toFixed(2);
+        const excess = (
+          strategy.returnRate - benchmark.returnRate
+        ).toFixed(2);
         const colorMap = {
           ADD: "green",
           HOLD: "orange",
@@ -196,19 +328,75 @@ export default function InvestmentPro() {
             />
 
             <Space wrap style={{ marginTop: 10 }}>
-              {g.days.map((d, i) => (
-                <InputNumber
-                  key={i}
-                  value={d}
-                  onChange={(v) => updateDay(idx, i, v)}
-                />
-              ))}
+              {g.days.map((d, i) => {
+                const detail = getDaySignalWithPosition(g.days, i);
+                const colorMap = {
+                  ADD: "green",
+                  HOLD: "orange",
+                  REDUCE: "gold",
+                  STRONG_REDUCE: "volcano",
+                  EXIT: "red"
+                };
+
+                return (
+                  <Space vertical key={i} align="center">
+                    <InputNumber
+                      value={d}
+                      onChange={(v) => updateDay(idx, i, v)}
+                    />
+
+
+
+                    <Tooltip
+                      title={
+                        <div>
+                          <div>操作：{detail.action}</div>
+                          <div>操作金额：{detail.changeAmount > 0 ? "+" : ""}{detail.changeAmount}</div>
+                          <div>当前仓位：{detail.position}</div>
+                          <div>当前收益指数：{detail.price}</div>
+                          <div>回撤：{detail.drawdown}%</div>
+                        </div>
+                      }
+                    >
+                      <Tag color={colorMap[detail.action]}>
+                        {detail.action}
+                      </Tag>
+                    </Tooltip>
+                  </Space>
+                );
+              })}
             </Space>
 
             <div style={{ marginTop: 10 }}>
-              <Text>收益：{detail.totalReturn}%</Text>
-              <br />
-              <Text>回撤：{detail.drawdown}%</Text>
+              <Space direction="vertical" style={{ marginTop: 10 }}>
+                <Text>
+                  总投入：{strategy.totalInvested}
+                </Text>
+
+                <Text>
+                  最终资产：{Math.round(strategy.finalAsset)}
+                </Text>
+
+                <Text style={{ color: "#cf1322" }}>
+                  策略收益：{strategy.returnRate}%（+{Math.round(strategy.profit)}）
+                </Text>
+
+                <Text style={{ color: "#1677ff" }}>
+                  持有收益：{benchmark.returnRate}%（+{Math.round(benchmark.profit)}）
+                </Text>
+
+                <Text
+                  style={{
+                    color: excess >= 0 ? "green" : "red"
+                  }}
+                >
+                  超额收益：{Math.round(strategy.profit - benchmark.profit)}
+                </Text>
+                资金效率（标准化）：
+                <span style={{ color: "green", marginLeft: 4 }}>
+                  {normalized}%
+                </span>
+              </Space>
             </div>
 
             <div style={{ marginTop: 10 }}>
