@@ -9,49 +9,39 @@ import ReactECharts from "echarts-for-react";
 const { Title, Text } = Typography;
 const STORAGE_KEY = "investment-pro";
 
+// ========== 获取实时信号（使用模拟中的实际交易金额） ==========
 function getRealtimeSignal(days, today, mode = "BASE") {
   const MAX_POSITION = 80000;
 
   const prev = simulateStrategy(days, mode);
   const next = simulateStrategy([...days, today], mode);
 
-  const prevPosition =
-    prev.positionCurve[prev.positionCurve.length - 1] || 0;
+  // 直接使用策略记录的最后一次交易信息
+  let action = next.lastTradeAction;
+  let changeAmount = Math.abs(next.lastTradeAmount);
 
-  const nextPosition =
-    next.positionCurve[next.positionCurve.length - 1] || 0;
-
-  const change = nextPosition - prevPosition;
-
-  let action = "HOLD";
-
-  if (change > 0) action = "ADD";
-  else if (change < 0) action = "REDUCE";
-
-  if (nextPosition === 0 && prevPosition > 0) {
-    action = "EXIT";
+  // 若没有实际交易（HOLD）但仓位变化来自价格波动，则强制为 HOLD 且金额为 0
+  if (action === "HOLD") {
+    changeAmount = 0;
   }
 
-  // ===== 仓位百分比 =====
-  const positionPct = Math.round((nextPosition / MAX_POSITION) * 100);
+  // 仓位百分比
+  const positionAfter = Math.round(next.positionCurve[next.positionCurve.length - 1] || 0);
+  const positionPct = Math.round((positionAfter / MAX_POSITION) * 100);
 
-  // ===== 风险等级 =====
+  // 风险等级（基于仓位比例和回撤）
   let risk = "低";
-
   if (positionPct > 70) risk = "高";
   else if (positionPct > 30) risk = "中";
 
-  // ===== drawdown（真实风险）=====
-  const dd =
-    next.drawdownCurve[next.drawdownCurve.length - 1] || 0;
-
+  const dd = next.drawdownCurve[next.drawdownCurve.length - 1] || 0;
   if (dd < -5) risk = "高";
   else if (dd < -2) risk = "中";
 
   return {
     action,
-    changeAmount: Math.abs(Math.round(change)),
-    positionAfter: Math.round(nextPosition),
+    changeAmount,
+    positionAfter,
     positionPct,
     risk,
     profit: Math.round(next.profit),
@@ -59,70 +49,14 @@ function getRealtimeSignal(days, today, mode = "BASE") {
   };
 }
 
-function getDualAxisOption(days, mode = "BASE") {
-  const res = simulateStrategy(days, mode);
-
-  const xData = res.assetCurve.map((_, i) => `Day ${i + 1}`);
-
-  return {
-    tooltip: { trigger: "axis" },
-    legend: {
-      data: ["总资产", "利润", "基准", "仓位", "投入", "回撤"]
-    },
-    xAxis: { type: "category", data: xData },
-    yAxis: [
-      { type: "value" },
-      {
-        type: "value",
-        axisLabel: { formatter: "{value}%" }
-      }
-    ],
-    series: [
-      {
-        name: "总资产",
-        type: "line",
-        data: res.assetCurve,
-        markPoint: {
-          data: [
-            ...res.buyPoints.map(p => ({ ...p, itemStyle: { color: "green" } })),
-            ...res.sellPoints.map(p => ({ ...p, itemStyle: { color: "red" } }))
-          ]
-        }
-      },
-      { name: "利润", type: "line", data: res.profitCurve },
-      {
-        name: "基准",
-        type: "line",
-        data: res.benchmarkCurve,
-        lineStyle: { type: "dashed" }
-      },
-      { name: "仓位", type: "line", data: res.positionCurve },
-      { name: "投入", type: "line", data: res.investedCurve },
-      {
-        name: "回撤",
-        type: "line",
-        data: res.drawdownCurve,
-        yAxisIndex: 1,
-        areaStyle: {}
-      }
-    ]
-  };
-}
-
-/**
- * ============================
- * 核心策略引擎（统一）
- * ============================
- */
+// ========== 核心策略引擎（统一，改进减仓逻辑 & 记录真实交易金额） ==========
 function simulateStrategy(days, mode = "BASE") {
   let price = 100;
-
-  let position = 10000;
+  let position = 10000;      // 持仓市值
   let cash = 0;
   let totalInvested = 10000;
 
   const MAX_POSITION = 80000;
-
   let peakPrice = 100;
   let peakAsset = 10000;
 
@@ -136,49 +70,61 @@ function simulateStrategy(days, mode = "BASE") {
   const buyPoints = [];
   const sellPoints = [];
 
+  // 记录当日最后发生的实际交易（用于实时信号）
+  let lastTradeAction = "HOLD";
+  let lastTradeAmount = 0;
+
   for (let i = 0; i < days.length; i++) {
     const r = Number(days[i]);
     if (isNaN(r)) continue;
 
-    // ===== 价格 =====
+    // 价格演变
     price *= (1 + r / 100);
     peakPrice = Math.max(peakPrice, price);
-
     const drawdown = (price - peakPrice) / peakPrice;
 
-    // ===== 持仓变化 =====
+    // 持仓市值自然波动
     position *= (1 + r / 100);
 
     let action = "HOLD";
     let changeAmount = 0;
 
-    // =====================
-    // 减仓（优先）
-    // =====================
+    // ========== 改进后的减仓/清仓逻辑（更平缓，避免微小波动触发） ==========
+    // 回撤阈值：-5% 开始减仓，-10% 清仓，中间线性过渡
+    let reduceRatio = 0;
     if (drawdown < -0.06) {
-      changeAmount = -position;
-      cash += position;
-      position = 0;
-      action = "EXIT";
+      reduceRatio = 1.0;        // 清仓
     } else if (drawdown < -0.03) {
-      changeAmount = -position * 0.5;
-      position *= 0.5;
-      cash += -changeAmount;
-      action = "REDUCE";
+      reduceRatio = 0.6;        // 减60%
+    } else if (drawdown < -0.02) {
+      reduceRatio = 0.3;        // 减30%
     }
 
-    // =====================
-    // 加仓（必须 else，避免同一天反复横跳）
-    // =====================
+    if (reduceRatio > 0) {
+      const reduceAmount = position * reduceRatio;
+      if (reduceRatio >= 0.99) {
+        // 清仓
+        changeAmount = -position;
+        cash += position;
+        position = 0;
+        action = "EXIT";
+      } else {
+        // 减仓
+        changeAmount = -reduceAmount;
+        position -= reduceAmount;
+        cash += reduceAmount;
+        action = "REDUCE";
+      }
+    }
+    // ========== 加仓逻辑（保持不变，但必须无减仓时才执行） ==========
     else {
       const recent = days.slice(Math.max(0, i - 2), i + 1)
         .map(Number)
         .filter(v => !isNaN(v));
-
       const recentSum = recent.reduce((a, b) => a + b, 0);
 
       if (mode === "BASE") {
-        // ===== 原始策略（趋势追涨）
+        // 原始趋势追涨
         if (r > 0 && drawdown > -0.02 && position < MAX_POSITION) {
           const add = Math.min(
             10000 * (1 - position / MAX_POSITION),
@@ -192,9 +138,8 @@ function simulateStrategy(days, mode = "BASE") {
           }
         }
       } else {
-        // ===== PRO策略（更稳健）
+        // PRO 策略（回调后追涨）
         const hasPullback = recent.some(v => v < 0);
-
         if (
           recentSum > 1 &&
           hasPullback &&
@@ -216,15 +161,20 @@ function simulateStrategy(days, mode = "BASE") {
       }
     }
 
-    const totalAsset = position + cash;
+    // 记录实际交易（用于外部信号）
+    if (action !== "HOLD") {
+      lastTradeAction = action;
+      lastTradeAmount = changeAmount;   // 正=加仓，负=减仓/清仓
+    }
 
-    // ===== 回撤 =====
+    // 总资产 & 回撤
+    const totalAsset = position + cash;
     peakAsset = Math.max(peakAsset, totalAsset);
     const dd = (totalAsset - peakAsset) / peakAsset;
 
     const benchmark = 10000 * (price / 100);
 
-    // ===== 曲线 =====
+    // 曲线记录
     assetCurve.push(Math.round(totalAsset));
     positionCurve.push(Math.round(position));
     investedCurve.push(Math.round(totalInvested));
@@ -232,24 +182,22 @@ function simulateStrategy(days, mode = "BASE") {
     benchmarkCurve.push(Math.round(benchmark));
     drawdownCurve.push((dd * 100).toFixed(2));
 
-    // ===== 标记点 =====
+    // 标记买卖点
     if (action === "ADD") {
       buyPoints.push({
         coord: [`Day ${i + 1}`, Math.round(totalAsset)],
         value: "加"
       });
     }
-
-    if (["REDUCE", "EXIT"].includes(action)) {
+    if (action === "REDUCE" || action === "EXIT") {
       sellPoints.push({
         coord: [`Day ${i + 1}`, Math.round(totalAsset)],
-        value: "减"
+        value: action === "EXIT" ? "清" : "减"
       });
     }
   }
 
   const finalAsset = position + cash;
-
   return {
     totalInvested,
     finalAsset,
@@ -263,15 +211,15 @@ function simulateStrategy(days, mode = "BASE") {
     benchmarkCurve,
     drawdownCurve,
     buyPoints,
-    sellPoints
+    sellPoints,
+
+    // 新增：最后一次实际交易信息（用于实时信号）
+    lastTradeAction,
+    lastTradeAmount
   };
 }
 
-/**
- * ============================
- * 图表
- * ============================
- */
+// ========== 图表配置 ==========
 function getOption(days, mode) {
   const data = simulateStrategy(days, mode);
   const x = data.assetCurve.map((_, i) => `Day ${i + 1}`);
@@ -313,11 +261,7 @@ function getOption(days, mode) {
   };
 }
 
-/**
- * ============================
- * 主组件
- * ============================
- */
+// ========== 主组件 ==========
 export default function InvestmentPro() {
   const [list, setList] = useState(() => {
     const cache = localStorage.getItem(STORAGE_KEY);
@@ -372,7 +316,7 @@ export default function InvestmentPro() {
             key={idx}
             className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm"
           >
-            {/* ===== 输入区 ===== */}
+            {/* 输入区 */}
             <div className="grid grid-cols-2 gap-4 mb-4">
               <Input
                 placeholder="ETF名称"
@@ -383,7 +327,6 @@ export default function InvestmentPro() {
                   setList(arr);
                 }}
               />
-
               <InputNumber
                 className="w-full"
                 placeholder="今日涨跌 %"
@@ -396,41 +339,40 @@ export default function InvestmentPro() {
               />
             </div>
 
-            {/* ===== 实时决策 ===== */}
+            {/* 实时信号卡片 */}
             {g.today !== null && (
               <div className="grid grid-cols-2 gap-4 mb-4">
                 {[{ t: "BASE", d: baseSignal }, { t: "PRO", d: proSignal }].map(
                   (item, i) => (
-                    <div
-                      key={i}
-                      className="border rounded-lg p-4 bg-gray-50"
-                    >
-                      <div className="font-medium mb-2">
-                        {item.t} 策略
-                      </div>
-
+                    <div key={i} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="font-medium mb-2">{item.t} 策略</div>
                       <div className="flex flex-col gap-1 text-sm">
                         <span
-                          className={`font-semibold ${item.d.action === "ADD"
-                            ? "text-green-600"
-                            : item.d.action === "REDUCE"
+                          className={`font-semibold ${
+                            item.d.action === "ADD"
+                              ? "text-green-600"
+                              : item.d.action === "REDUCE"
                               ? "text-orange-500"
-                              : "text-red-500"
-                            }`}
+                              : item.d.action === "EXIT"
+                              ? "text-red-500"
+                              : "text-gray-500"
+                          }`}
                         >
-                          {item.d.action}
+                          {item.d.action === "ADD" && "加仓"}
+                          {item.d.action === "REDUCE" && "减仓"}
+                          {item.d.action === "EXIT" && "清仓"}
+                          {item.d.action === "HOLD" && "持有"}
                         </span>
-
                         <span>操作金额：{item.d.changeAmount}</span>
                         <span>建议仓位：{item.d.positionPct}%</span>
-
                         <span
-                          className={`${item.d.risk === "高"
-                            ? "text-red-500"
-                            : item.d.risk === "中"
+                          className={`${
+                            item.d.risk === "高"
+                              ? "text-red-500"
+                              : item.d.risk === "中"
                               ? "text-yellow-500"
                               : "text-green-600"
-                            }`}
+                          }`}
                         >
                           风险：{item.d.risk}
                         </span>
@@ -441,7 +383,7 @@ export default function InvestmentPro() {
               </div>
             )}
 
-            {/* ===== KPI ===== */}
+            {/* KPI 指标 */}
             <div className="grid grid-cols-4 gap-4 mb-4">
               <div className="bg-gray-50 p-3 rounded">
                 <div className="text-xs text-gray-500">BASE收益</div>
@@ -449,21 +391,18 @@ export default function InvestmentPro() {
                   {Math.round(base.profit)}
                 </div>
               </div>
-
               <div className="bg-gray-50 p-3 rounded">
                 <div className="text-xs text-gray-500">PRO收益</div>
                 <div className="text-blue-600 font-semibold">
                   {Math.round(pro.profit)}
                 </div>
               </div>
-
               <div className="bg-gray-50 p-3 rounded">
                 <div className="text-xs text-gray-500">持有收益</div>
                 <div className="text-gray-700 font-semibold">
                   {Math.round(holdProfit)}
                 </div>
               </div>
-
               <div className="bg-gray-50 p-3 rounded">
                 <div className="text-xs text-gray-500">PRO超额</div>
                 <div className="text-purple-600 font-semibold">
@@ -472,22 +411,21 @@ export default function InvestmentPro() {
               </div>
             </div>
 
-            {/* ===== 日轨迹 ===== */}
+            {/* 日收益率输入 */}
             <div className="flex flex-wrap gap-2 mb-3">
-              {g.days.map((d, i) => {
-                return <InputNumber
+              {g.days.map((d, i) => (
+                <InputNumber
+                  key={i}
                   value={d}
                   step={0.1}
                   style={{ width: 90 }}
                   onChange={(v) => updateDay(idx, i, v)}
                 />
-
-              })}
+              ))}
             </div>
+            <Button onClick={() => addDay(idx)}>+ 添加交易日</Button>
 
-            <Button onClick={() => addDay(idx)}>+ 天</Button>
-
-            {/* ===== 图表 ===== */}
+            {/* 双图表 */}
             <div className="flex gap-4 mt-5">
               <div className="flex-1">
                 <ReactECharts option={getOption(g.days, "BASE")} />
