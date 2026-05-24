@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   Card, Button, Input, InputNumber, Space,
   Tag, Typography, Modal, Tooltip,
-  Row, Col, Statistic, Divider, Flex
+  Row, Col, Statistic, Divider, Flex, ConfigProvider
 } from "antd";
 import ReactECharts from "echarts-for-react";
 
@@ -46,6 +46,82 @@ function getRealtimeSignal(days, today, mode = "BASE") {
     risk,
     profit: Math.round(next.profit),
     finalAsset: Math.round(next.finalAsset)
+  };
+}
+
+// ========== 计算各操作点位的具体金额（用于 hover 提示） ==========
+function calculateActionAmounts(days, mode = "BASE") {
+  const MAX_POSITION = 80000;
+  const current = simulateStrategy(days, mode);
+
+  // 当前仓位
+  const currentPosition = current.positionCurve.length > 0
+    ? current.positionCurve[current.positionCurve.length - 1]
+    : 10000;
+
+  // 当前价格（用于计算回撤影响）
+  const lastDD = current.drawdownCurve.length > 0
+    ? parseFloat(current.drawdownCurve[current.drawdownCurve.length - 1]) / 100
+    : 0;
+
+  // 计算加仓金额：区分策略类型
+  // BASE策略: 10000 * (1 - position / MAX_POSITION)
+  // PRO策略: 8000 * (1 - position / MAX_POSITION)
+  const baseAddAmount = 10000;
+  const proAddAmount = 8000;
+  const addBase = mode === "BASE" ? baseAddAmount : proAddAmount;
+  const addAmount = Math.round(Math.min(
+    addBase * (1 - currentPosition / MAX_POSITION),
+    MAX_POSITION - currentPosition
+  ));
+
+  // 计算减仓金额：基于当前仓位的30%和60%
+  const reduce30Amount = Math.round(currentPosition * 0.3);
+  const reduce60Amount = Math.round(currentPosition * 0.6);
+
+  // 清仓金额：全部仓位
+  const exitAmount = Math.round(currentPosition);
+
+  // 计算触发点位
+  // 当前虚拟价格 = 100 * (1 + 累计收益)
+  const totalReturn = (current.finalAsset - current.totalInvested) / current.totalInvested;
+  const currentPrice = 100 * (1 + totalReturn);
+  const peakPrice = currentPrice / (1 + lastDD);
+
+  // 计算各触发点位的涨跌值
+  const addTriggerPrice = peakPrice * (1 - 0.02);  // 回撤 > -2%
+  const reduce30TriggerPrice = peakPrice * (1 - 0.02);  // 回撤 -2%
+  const reduce60TriggerPrice = peakPrice * (1 - 0.03);  // 回撤 -3%
+  const exitTriggerPrice = peakPrice * (1 - 0.06);  // 回撤 -6%
+
+  const addTriggerPct = ((addTriggerPrice - currentPrice) / currentPrice * 100).toFixed(2);
+  const reduce30TriggerPct = ((reduce30TriggerPrice - currentPrice) / currentPrice * 100).toFixed(2);
+  const reduce60TriggerPct = ((reduce60TriggerPrice - currentPrice) / currentPrice * 100).toFixed(2);
+  const exitTriggerPct = ((exitTriggerPrice - currentPrice) / currentPrice * 100).toFixed(2);
+
+  return {
+    currentPosition: Math.round(currentPosition),
+    currentPositionPct: Math.round((currentPosition / MAX_POSITION) * 100),
+    add: {
+      trigger: `涨 > 0% 且回撤 > -2%`,
+      triggerPct: addTriggerPct,
+      amount: addAmount
+    },
+    reduce30: {
+      trigger: `回撤 -2% ~ -3%`,
+      triggerPct: reduce30TriggerPct,
+      amount: reduce30Amount
+    },
+    reduce60: {
+      trigger: `回撤 -3% ~ -6%`,
+      triggerPct: reduce60TriggerPct,
+      amount: reduce60Amount
+    },
+    exit: {
+      trigger: `回撤 < -6%`,
+      triggerPct: exitTriggerPct,
+      amount: exitAmount
+    }
   };
 }
 
@@ -261,13 +337,231 @@ function getOption(days, mode) {
   };
 }
 
+// ========== ETF 子组件（使用 useMemo 缓存计算结果） ==========
+function ETFItem({ g, idx, list, setList, updateDay, addDay }) {
+  const base = useMemo(() => simulateStrategy(g.days, "BASE"), [g.days]);
+  const pro = useMemo(() => simulateStrategy(g.days, "PRO"), [g.days]);
+
+  // 缓存操作金额计算结果，避免重复计算
+  const baseActionAmounts = useMemo(() => calculateActionAmounts(g.days, "BASE"), [g.days]);
+  const proActionAmounts = useMemo(() => calculateActionAmounts(g.days, "PRO"), [g.days]);
+
+  const baseSignal = useMemo(() =>
+    g.today !== null ? getRealtimeSignal(g.days, g.today, "BASE") : null,
+    [g.days, g.today]
+  );
+
+  const proSignal = useMemo(() =>
+    g.today !== null ? getRealtimeSignal(g.days, g.today, "PRO") : null,
+    [g.days, g.today]
+  );
+
+  const holdProfit = useMemo(() =>
+    base.benchmarkCurve.length > 0 ? base.benchmarkCurve.slice(-1)[0] - 10000 : 0,
+    [base.benchmarkCurve]
+  );
+
+  return (
+    <div
+      key={idx}
+      className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm"
+    >
+      {/* 输入区 */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <Tooltip
+          title={
+            <div className=" p-4 space-y-3 w-[320px] rounded-lg shadow-lg">
+              <div className="font-semibold text-sm mb-2 text-gray-800">📊 今日操作建议</div>
+              <div className="text-xs text-gray-500 mb-1">当前仓位: {baseActionAmounts.currentPositionPct}% ({baseActionAmounts.currentPosition.toLocaleString()}元)</div>
+
+              {/* BASE 策略 */}
+              <div className="border-b border-gray-200 pb-2">
+                <div className="text-xs font-medium text-blue-600 mb-2">🎯 BASE 策略</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-green-50 rounded p-2">
+                    <div className="text-xs text-green-700">📈 加仓</div>
+                    <div className="text-xs text-green-600">
+                      &gt;0%
+                    </div>
+                    <div className="text-xs font-semibold text-green-600">+{baseActionAmounts.add.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-orange-50 rounded p-2">
+                    <div className="text-xs text-orange-700">📉 减仓</div>
+                    <div className="text-xs text-orange-600">{baseActionAmounts.reduce30.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-orange-600">-{baseActionAmounts.reduce30.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-orange-100 rounded p-2">
+                    <div className="text-xs text-orange-800">⚠️ 深减</div>
+                    <div className="text-xs text-orange-700">{baseActionAmounts.reduce60.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-orange-700">-{baseActionAmounts.reduce60.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-red-50 rounded p-2">
+                    <div className="text-xs text-red-700">🛑 清仓</div>
+                    <div className="text-xs text-red-600">&lt;{baseActionAmounts.exit.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-red-600">-{baseActionAmounts.exit.amount.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* PRO 策略 */}
+              <div>
+                <div className="text-xs font-medium text-purple-600 mb-2">🚀 PRO 策略</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-green-50 rounded p-2">
+                    <div className="text-xs text-green-700">📈 加仓</div>
+                    <div className="text-xs text-green-600">
+                      &gt;0%
+                    </div>
+                    <div className="text-xs font-semibold text-green-600">+{proActionAmounts.add.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-orange-50 rounded p-2">
+                    <div className="text-xs text-orange-700">📉 减仓</div>
+                    <div className="text-xs text-orange-600">{proActionAmounts.reduce30.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-orange-600">-{proActionAmounts.reduce30.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-orange-100 rounded p-2">
+                    <div className="text-xs text-orange-800">⚠️ 深减</div>
+                    <div className="text-xs text-orange-700">{proActionAmounts.reduce60.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-orange-700">-{proActionAmounts.reduce60.amount.toLocaleString()}</div>
+                  </div>
+                  <div className="bg-red-50 rounded p-2">
+                    <div className="text-xs text-red-700">🛑 清仓</div>
+                    <div className="text-xs text-red-600">&lt;{proActionAmounts.exit.triggerPct}%</div>
+                    <div className="text-xs font-semibold text-red-600">-{proActionAmounts.exit.amount.toLocaleString()}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          }
+          placement="bottom"
+          overlayStyle={{ borderRadius: '8px' }}
+        >
+          <Input
+            placeholder="ETF名称"
+            value={g.name}
+            onChange={(e) => {
+              const arr = [...list];
+              arr[idx].name = e.target.value;
+              setList(arr);
+            }}
+          />
+        </Tooltip>
+        <InputNumber
+          className="w-full"
+          placeholder="今日涨跌 %"
+          value={g.today}
+          onChange={(v) => {
+            const arr = [...list];
+            arr[idx].today = v;
+            setList(arr);
+          }}
+        />
+      </div>
+
+      {/* 实时信号卡片 */}
+      {g.today != null && (
+        <div className="grid grid-cols-2 gap-4 mb-4">
+          {[{ t: "BASE", d: baseSignal }, { t: "PRO", d: proSignal }].map(
+            (item, i) => (
+              <div key={i} className="border rounded-lg p-4 bg-gray-50">
+                <div className="font-medium mb-2">{item.t} 策略</div>
+                <div className="flex flex-col gap-1 text-sm">
+                  <span
+                    className={`font-semibold ${item.d.action === "ADD"
+                      ? "text-green-600"
+                      : item.d.action === "REDUCE"
+                        ? "text-orange-500"
+                        : item.d.action === "EXIT"
+                          ? "text-red-500"
+                          : "text-gray-500"
+                      }`}
+                  >
+                    {item.d.action === "ADD" && "加仓"}
+                    {item.d.action === "REDUCE" && "减仓"}
+                    {item.d.action === "EXIT" && "清仓"}
+                    {item.d.action === "HOLD" && "持有"}
+                  </span>
+                  <span>操作金额：{item.d.changeAmount}</span>
+                  <span>建议仓位：{item.d.positionPct}%</span>
+                  <span
+                    className={`${item.d.risk === "高"
+                      ? "text-red-500"
+                      : item.d.risk === "中"
+                        ? "text-yellow-500"
+                        : "text-green-600"
+                      }`}
+                  >
+                    风险：{item.d.risk}
+                  </span>
+                </div>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* KPI 指标 */}
+      <div className="grid grid-cols-4 gap-4 mb-4">
+        <div className="bg-gray-50 p-3 rounded">
+          <div className="text-xs text-gray-500">BASE收益</div>
+          <div className="text-green-600 font-semibold">
+            {Math.round(base.profit)}
+          </div>
+        </div>
+        <div className="bg-gray-50 p-3 rounded">
+          <div className="text-xs text-gray-500">PRO收益</div>
+          <div className="text-blue-600 font-semibold">
+            {Math.round(pro.profit)}
+          </div>
+        </div>
+        <div className="bg-gray-50 p-3 rounded">
+          <div className="text-xs text-gray-500">持有收益</div>
+          <div className="text-gray-700 font-semibold">
+            {Math.round(holdProfit)}
+          </div>
+        </div>
+        <div className="bg-gray-50 p-3 rounded">
+          <div className="text-xs text-gray-500">PRO超额</div>
+          <div className="text-purple-600 font-semibold">
+            {Math.round(pro.profit - holdProfit)}
+          </div>
+        </div>
+      </div>
+
+      {/* 日收益率输入 */}
+      <div className="flex flex-wrap gap-2 mb-3">
+        {g.days.map((d, i) => (
+          <InputNumber
+            key={i}
+            value={d}
+            step={0.1}
+            style={{ width: 90 }}
+            onChange={(v) => updateDay(idx, i, v)}
+          />
+        ))}
+      </div>
+      <Button onClick={() => addDay(idx)}>+ 添加交易日</Button>
+
+      {/* 双图表 */}
+      <div className="flex gap-4 mt-5">
+        <div className="flex-1">
+          <ReactECharts option={getOption(g.days, "BASE")} />
+        </div>
+        <div className="flex-1">
+          <ReactECharts option={getOption(g.days, "PRO")} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ========== 主组件 ==========
 export default function InvestmentPro() {
   const [list, setList] = useState(() => {
     const cache = localStorage.getItem(STORAGE_KEY);
     return cache
       ? JSON.parse(cache)
-      : [{ name: "", today: null, days: [null, null] }];
+      : [{ name: "", today: null, days: [] }];
   });
 
   useEffect(() => {
@@ -282,161 +576,37 @@ export default function InvestmentPro() {
 
   const addDay = (g) => {
     const arr = [...list];
-    arr[g].days.push(null);
+    arr[g].days.push(0);
     setList(arr);
   };
 
   return (
-    <div className="max-w-[1400px] mx-auto p-6 bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-semibold mb-6">
-        ETF 策略终端（双策略量化）
-      </h1>
+    <ConfigProvider
+      theme={{
+        components: {
+          Tooltip: {
+            maxWidth: 600,
+          }
+        }
+      }}
+    >
+      <div className="max-w-[1400px] mx-auto p-6 bg-gray-50 min-h-screen">
+        <h1 className="text-2xl font-semibold mb-6">
+          ETF 策略终端（双策略量化）
+        </h1>
 
-      {list.map((g, idx) => {
-        const base = simulateStrategy(g.days, "BASE");
-        const pro = simulateStrategy(g.days, "PRO");
-
-        const baseSignal =
-          g.today !== null
-            ? getRealtimeSignal(g.days, g.today, "BASE")
-            : null;
-
-        const proSignal =
-          g.today !== null
-            ? getRealtimeSignal(g.days, g.today, "PRO")
-            : null;
-
-        const holdProfit =
-          base.benchmarkCurve.length > 0
-            ? base.benchmarkCurve.slice(-1)[0] - 10000
-            : 0;
-
-        return (
-          <div
+        {list.map((g, idx) => (
+          <ETFItem
             key={idx}
-            className="bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm"
-          >
-            {/* 输入区 */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
-              <Input
-                placeholder="ETF名称"
-                value={g.name}
-                onChange={(e) => {
-                  const arr = [...list];
-                  arr[idx].name = e.target.value;
-                  setList(arr);
-                }}
-              />
-              <InputNumber
-                className="w-full"
-                placeholder="今日涨跌 %"
-                value={g.today}
-                onChange={(v) => {
-                  const arr = [...list];
-                  arr[idx].today = v;
-                  setList(arr);
-                }}
-              />
-            </div>
-
-            {/* 实时信号卡片 */}
-            {g.today !== null && (
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                {[{ t: "BASE", d: baseSignal }, { t: "PRO", d: proSignal }].map(
-                  (item, i) => (
-                    <div key={i} className="border rounded-lg p-4 bg-gray-50">
-                      <div className="font-medium mb-2">{item.t} 策略</div>
-                      <div className="flex flex-col gap-1 text-sm">
-                        <span
-                          className={`font-semibold ${
-                            item.d.action === "ADD"
-                              ? "text-green-600"
-                              : item.d.action === "REDUCE"
-                              ? "text-orange-500"
-                              : item.d.action === "EXIT"
-                              ? "text-red-500"
-                              : "text-gray-500"
-                          }`}
-                        >
-                          {item.d.action === "ADD" && "加仓"}
-                          {item.d.action === "REDUCE" && "减仓"}
-                          {item.d.action === "EXIT" && "清仓"}
-                          {item.d.action === "HOLD" && "持有"}
-                        </span>
-                        <span>操作金额：{item.d.changeAmount}</span>
-                        <span>建议仓位：{item.d.positionPct}%</span>
-                        <span
-                          className={`${
-                            item.d.risk === "高"
-                              ? "text-red-500"
-                              : item.d.risk === "中"
-                              ? "text-yellow-500"
-                              : "text-green-600"
-                          }`}
-                        >
-                          风险：{item.d.risk}
-                        </span>
-                      </div>
-                    </div>
-                  )
-                )}
-              </div>
-            )}
-
-            {/* KPI 指标 */}
-            <div className="grid grid-cols-4 gap-4 mb-4">
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-xs text-gray-500">BASE收益</div>
-                <div className="text-green-600 font-semibold">
-                  {Math.round(base.profit)}
-                </div>
-              </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-xs text-gray-500">PRO收益</div>
-                <div className="text-blue-600 font-semibold">
-                  {Math.round(pro.profit)}
-                </div>
-              </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-xs text-gray-500">持有收益</div>
-                <div className="text-gray-700 font-semibold">
-                  {Math.round(holdProfit)}
-                </div>
-              </div>
-              <div className="bg-gray-50 p-3 rounded">
-                <div className="text-xs text-gray-500">PRO超额</div>
-                <div className="text-purple-600 font-semibold">
-                  {Math.round(pro.profit - holdProfit)}
-                </div>
-              </div>
-            </div>
-
-            {/* 日收益率输入 */}
-            <div className="flex flex-wrap gap-2 mb-3">
-              {g.days.map((d, i) => (
-                <InputNumber
-                  key={i}
-                  value={d}
-                  step={0.1}
-                  style={{ width: 90 }}
-                  onChange={(v) => updateDay(idx, i, v)}
-                />
-              ))}
-            </div>
-            <Button onClick={() => addDay(idx)}>+ 添加交易日</Button>
-
-            {/* 双图表 */}
-            <div className="flex gap-4 mt-5">
-              <div className="flex-1">
-                <ReactECharts option={getOption(g.days, "BASE")} />
-              </div>
-              <div className="flex-1">
-                <ReactECharts option={getOption(g.days, "PRO")} />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            g={g}
+            idx={idx}
+            updateDay={updateDay}
+            addDay={addDay}
+            list={list}
+            setList={setList}
+          />
+        ))}
+      </div>
+    </ConfigProvider>
   );
 }
