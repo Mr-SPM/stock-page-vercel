@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Card, Button, Input, InputNumber, Space,
   Tag, Typography, Modal, Tooltip,
-  Row, Col, Statistic, Divider, Flex, ConfigProvider
+  Row, Col, Statistic, Divider, Flex, ConfigProvider, Checkbox
 } from "antd";
 import ReactECharts from "echarts-for-react";
+import getStockData from "../services/stock";
 
 const { Title, Text } = Typography;
 const STORAGE_KEY = "investment-pro";
@@ -338,7 +339,7 @@ function getOption(days, mode) {
 }
 
 // ========== ETF 子组件（使用 useMemo 缓存计算结果） ==========
-function ETFItem({ g, idx, list, setList, updateDay, addDay }) {
+function ETFItem({ g, idx, list, setList, updateDay, addDay, onAutoUpdateChange, onEtfCodeChange }) {
   const base = useMemo(() => simulateStrategy(g.days, "BASE"), [g.days]);
   const pro = useMemo(() => simulateStrategy(g.days, "PRO"), [g.days]);
 
@@ -368,6 +369,10 @@ function ETFItem({ g, idx, list, setList, updateDay, addDay }) {
     >
       {/* 输入区 */}
       <div className="grid grid-cols-2 gap-4 mb-4">
+        <Checkbox
+          checked={g.isAutoUpdate}
+          onChange={(e) => onAutoUpdateChange(idx, e.target.checked)}
+        />
         <Tooltip
           title={
             <div className=" p-4 space-y-3 w-[320px] rounded-lg shadow-lg">
@@ -446,6 +451,13 @@ function ETFItem({ g, idx, list, setList, updateDay, addDay }) {
             }}
           />
         </Tooltip>
+        {g.isAutoUpdate && (
+          <Input
+            placeholder="ETF代码 (如 SZ159178)"
+            value={g.etfCode}
+            onChange={(e) => onEtfCodeChange(idx, e.target.value)}
+          />
+        )}
         <InputNumber
           className="w-full"
           placeholder="今日涨跌 %"
@@ -561,7 +573,7 @@ export default function InvestmentPro() {
     const cache = localStorage.getItem(STORAGE_KEY);
     return cache
       ? JSON.parse(cache)
-      : [{ name: "", today: null, days: [] }];
+      : [{ name: "", today: null, days: [], etfCode: "", isAutoUpdate: false }];
   });
 
   useEffect(() => {
@@ -577,6 +589,45 @@ export default function InvestmentPro() {
   const addDay = (g) => {
     const arr = [...list];
     arr[g].days.push(0);
+    setList(arr);
+  };
+
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      const codesToUpdate = list
+        .filter(item => item.isAutoUpdate && item.etfCode)
+        .map(item => item.etfCode);
+
+      if (codesToUpdate.length > 0) {
+        try {
+          // 假设 stock.ts 返回 { code, change, price } 格式
+          const data = await getStockData(codesToUpdate);
+          const newList = [...list];
+          data.forEach(item => {
+            const idx = newList.findIndex(i => i.etfCode === item.code);
+            if (idx !== -1) {
+              newList[idx].today = item.change;
+            }
+          });
+          setList(newList);
+        } catch (e) {
+          console.error('Failed to fetch stock data:', e);
+        }
+      }
+    }, 5000); // 每5秒轮询一次
+
+    return () => clearInterval(interval);
+  }, [list]);
+
+  const onAutoUpdateChange = (idx, value) => {
+    const arr = [...list];
+    arr[idx].isAutoUpdate = value;
+    setList(arr);
+  };
+
+  const onEtfCodeChange = (idx, value) => {
+    const arr = [...list];
+    arr[idx].etfCode = value;
     setList(arr);
   };
 
@@ -604,6 +655,8 @@ export default function InvestmentPro() {
             addDay={addDay}
             list={list}
             setList={setList}
+            onAutoUpdateChange={onAutoUpdateChange}
+            onEtfCodeChange={onEtfCodeChange}
           />
         ))}
       </div>
